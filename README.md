@@ -4,6 +4,7 @@ A full-stack web application for uploading, parsing, and visualizing NSE F&O dat
 
 ## Features
 
+### Core
 - **Drag & Drop Upload** – Upload CSV files with automatic format detection
 - **Participant-wise OI** – Visualize Client, DII, FII, Pro positions across segments
 - **Bhavcopy Analysis** – Top movers by OI, volume, price; PCR by symbol
@@ -11,6 +12,20 @@ A full-stack web application for uploading, parsing, and visualizing NSE F&O dat
 - **Auto Insights** – Net positions, PCR, FII vs retail divergence, buildup detection
 - **Dark Mode** – Toggle between dark and light themes
 - **Export Charts** – Save any chart as an image (click the save icon on each chart)
+- **Persistent Storage** – All uploaded data persists in IndexedDB across browser refreshes
+
+### Advanced Analysis (New)
+- **Sentiment Scorecard** – Composite sentiment gauge (-100 to +100) from FII positioning, PCR, buildup classification
+- **Multi-Day Trend Tracker** – Track FII net positions, PCR, and L/S ratio across N days as time-series charts
+- **FII Index Long/Short Ratio** – The single most-watched institutional metric, tracked over time
+- **Change in OI (COI)** – Strike-wise OI delta heatmap showing fresh writing vs unwinding
+- **Straddle/Strangle Zones** – OI-implied range (highest Call OI + highest Put OI) for range-bound strategy decisions
+- **IV Smile/Skew** – Estimated implied volatility by strike with abnormally high IV detection
+- **Expiry Rollover Analysis** – Near vs next month OI with rollover % and cost analysis
+- **Max Pain Trend** – Multi-day max pain drift for NIFTY/BANKNIFTY
+- **Sector Heatmap** – Treemap and bar charts showing sector-wise OI/volume distribution
+- **Watchlist** – Pin symbols and see OI, PCR, max pain, support/resistance at a glance
+- **Keyboard Shortcuts** – `1-8` switch tabs, `D` toggle dark mode, `U` open upload
 
 ## Supported CSV Formats
 
@@ -69,20 +84,28 @@ F&OVisualizer/
 ├── README.md
 └── src/
     ├── main.jsx                  # Entry point
-    ├── App.jsx                   # App shell, tabs, theme
+    ├── App.jsx                   # App shell, tabs, theme, keyboard shortcuts
     ├── App.css                   # Global styles
     ├── theme.js                  # MUI theme configuration
     ├── context/
-    │   └── DataContext.jsx       # Shared state management
+    │   └── DataContext.jsx       # Shared state + IndexedDB persistence
     ├── utils/
     │   ├── parsers.js            # CSV parsing & data normalization
-    │   └── insights.js           # Analysis & insight generation
+    │   ├── insights.js           # Analysis, scoring, IV, COI, rollover
+    │   ├── storage.js            # IndexedDB persistence layer
+    │   └── sectors.js            # Sector classification & colors
     └── components/
-        ├── FileUpload.jsx        # Drag & drop file upload
+        ├── FileUpload.jsx            # Drag & drop file upload
         ├── ParticipantDashboard.jsx  # Participant OI visualizations
         ├── BhavcopyDashboard.jsx     # Bhavcopy charts & tables
         ├── ComparisonView.jsx        # Multi-date comparison
-        └── InsightsPanel.jsx         # Automated insights & PCR
+        ├── MultiDayTrend.jsx         # N-day trend tracker (FII L/S, PCR, positions)
+        ├── AdvancedAnalysis.jsx      # COI, straddle zones, IV smile, rollover
+        ├── Watchlist.jsx             # Symbol pinning with key metrics
+        ├── SectorHeatmap.jsx         # Sector-wise OI/volume treemap
+        ├── SentimentScorecard.jsx    # Composite sentiment gauge
+        ├── InsightsPanel.jsx         # Automated insights, FII L/S, max pain trend
+        └── StrikeAnalysis.jsx        # Strike-wise OI, PCR, volume, max pain
 ```
 
 ## Tech Stack

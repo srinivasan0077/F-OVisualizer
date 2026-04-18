@@ -7,7 +7,7 @@ import { useData } from '../context/DataContext';
 import { formatDate, getNearMonthExpiry } from '../utils/parsers';
 import {
   formatNum, generateParticipantInsights, generateBhavcopyInsights,
-  calculatePCR,
+  calculatePCR, calculateFIILongShortRatio, analyzeStrikes,
 } from '../utils/insights';
 
 const SENTIMENT_MAP = {
@@ -88,6 +88,111 @@ export default function InsightsPanel() {
       }],
     };
   }, [latestParticipant, darkMode]);
+
+  // FII Long/Short Ratio (latest)
+  const fiiLSData = useMemo(() => {
+    const ratioData = calculateFIILongShortRatio(participantData);
+    return ratioData.filter((d) => d.ratio !== null);
+  }, [participantData]);
+
+  // Max Pain trend across days
+  const maxPainTrend = useMemo(() => {
+    const optData = bhavcopyData.filter((d) => d.type === 'options').sort((a, b) => a.date.localeCompare(b.date));
+    return optData.map((d) => {
+      const nearExpiry = getNearMonthExpiry(d.records);
+      const niftyAnalysis = analyzeStrikes(d.records, 'NIFTY', nearExpiry);
+      const bnAnalysis = analyzeStrikes(d.records, 'BANKNIFTY', nearExpiry);
+      return {
+        date: d.date,
+        niftyMaxPain: niftyAnalysis?.maxPain || null,
+        bnMaxPain: bnAnalysis?.maxPain || null,
+        niftyUnderlying: niftyAnalysis?.underlyingValue || null,
+        bnUnderlying: bnAnalysis?.underlyingValue || null,
+      };
+    }).filter((d) => d.niftyMaxPain || d.bnMaxPain);
+  }, [bhavcopyData]);
+
+  // Max Pain trend chart
+  const maxPainTrendChart = useMemo(() => {
+    if (!maxPainTrend.length) return {};
+    const hasNifty = maxPainTrend.some((d) => d.niftyMaxPain);
+    const hasBN = maxPainTrend.some((d) => d.bnMaxPain);
+    const series = [];
+    if (hasNifty) {
+      series.push({
+        name: 'NIFTY Max Pain',
+        type: 'line',
+        data: maxPainTrend.map((d) => d.niftyMaxPain),
+        lineStyle: { width: 2.5, color: '#5c6bc0' },
+        itemStyle: { color: '#5c6bc0' },
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 7,
+      });
+      series.push({
+        name: 'NIFTY Underlying',
+        type: 'line',
+        data: maxPainTrend.map((d) => d.niftyUnderlying),
+        lineStyle: { width: 1.5, color: '#5c6bc0', type: 'dashed' },
+        itemStyle: { color: '#5c6bc0' },
+        smooth: true,
+        symbol: 'diamond',
+        symbolSize: 5,
+      });
+    }
+    if (hasBN) {
+      series.push({
+        name: 'BANKNIFTY Max Pain',
+        type: 'line',
+        yAxisIndex: hasBN && hasNifty ? 1 : 0,
+        data: maxPainTrend.map((d) => d.bnMaxPain),
+        lineStyle: { width: 2.5, color: '#ff9800' },
+        itemStyle: { color: '#ff9800' },
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 7,
+      });
+      series.push({
+        name: 'BANKNIFTY Underlying',
+        type: 'line',
+        yAxisIndex: hasBN && hasNifty ? 1 : 0,
+        data: maxPainTrend.map((d) => d.bnUnderlying),
+        lineStyle: { width: 1.5, color: '#ff9800', type: 'dashed' },
+        itemStyle: { color: '#ff9800' },
+        smooth: true,
+        symbol: 'diamond',
+        symbolSize: 5,
+      });
+    }
+    const yAxes = [{
+      type: 'value',
+      name: hasNifty ? 'NIFTY' : 'BANKNIFTY',
+      axisLabel: { color: darkMode ? '#ccc' : '#333', formatter: (v) => v.toLocaleString('en-IN') },
+      splitLine: { lineStyle: { color: darkMode ? '#333' : '#e0e0e0' } },
+    }];
+    if (hasNifty && hasBN) {
+      yAxes.push({
+        type: 'value',
+        name: 'BANKNIFTY',
+        position: 'right',
+        axisLabel: { color: darkMode ? '#ccc' : '#333', formatter: (v) => v.toLocaleString('en-IN') },
+        splitLine: { show: false },
+      });
+    }
+    return {
+      tooltip: { trigger: 'axis' },
+      legend: { textStyle: { color: darkMode ? '#ccc' : '#333' } },
+      toolbox: { feature: { saveAsImage: { title: 'Save' } }, right: 10 },
+      grid: { left: 80, right: hasBN && hasNifty ? 80 : 30, top: 60, bottom: 30 },
+      xAxis: {
+        type: 'category',
+        data: maxPainTrend.map((d) => formatDate(d.date)),
+        axisLabel: { color: darkMode ? '#ccc' : '#333', rotate: 30 },
+      },
+      yAxis: yAxes,
+      series,
+    };
+  }, [maxPainTrend, darkMode]);
 
   if (!participantData.length && !bhavcopyData.length) {
     return <Alert severity="info">Upload CSV files to see automated insights.</Alert>;
@@ -215,6 +320,55 @@ export default function InsightsPanel() {
               <CardContent>
                 <Typography variant="h6" gutterBottom>FII Position Breakdown</Typography>
                 <ReactECharts option={fiiBreakdownChart} style={{ height: 350 }} />
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
+        {/* FII Index L/S Ratio */}
+        {fiiLSData.length > 0 && (
+          <Grid item xs={12} md={6}>
+            <Card sx={{ border: '1px solid', borderColor: (fiiLSData[fiiLSData.length - 1]?.ratio || 0) >= 1 ? 'success.main' : 'error.main' }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>FII Index Futures L/S Ratio</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                  <Typography variant="h3" fontWeight={700} sx={{
+                    color: (fiiLSData[fiiLSData.length - 1]?.ratio || 0) >= 1 ? 'success.main' : 'error.main',
+                  }}>
+                    {fiiLSData[fiiLSData.length - 1]?.ratio?.toFixed(2) || '-'}
+                  </Typography>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Long: {formatNum(fiiLSData[fiiLSData.length - 1]?.longContracts || 0)}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Short: {formatNum(fiiLSData[fiiLSData.length - 1]?.shortContracts || 0)}
+                    </Typography>
+                  </Box>
+                  <Chip
+                    label={(fiiLSData[fiiLSData.length - 1]?.ratio || 0) >= 1 ? 'FII Bullish' : 'FII Bearish'}
+                    color={(fiiLSData[fiiLSData.length - 1]?.ratio || 0) >= 1 ? 'success' : 'error'}
+                    sx={{ fontWeight: 700 }}
+                  />
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  Ratio &gt; 1 = FII net long in index futures (bullish) | &lt; 1 = net short (bearish)
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
+        {/* Max Pain Trend */}
+        {maxPainTrend.length >= 2 && (
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>Max Pain Trend — NIFTY / BANKNIFTY</Typography>
+                <ReactECharts option={maxPainTrendChart} style={{ height: 350 }} />
+                <Typography variant="caption" color="text.secondary">
+                  Solid = Max Pain | Dashed = Underlying — Max Pain drift direction confirms positioning bias
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
