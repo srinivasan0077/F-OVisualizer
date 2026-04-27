@@ -8,10 +8,11 @@ import { CloudUpload, InsertDriveFile, CheckCircle, Error as ErrorIcon } from '@
 import { useData } from '../context/DataContext';
 import {
   detectFileType, parseParticipantOI, parseBhavcopyFutures, parseBhavcopyOptions,
+  parseCommodityBhavcopy,
 } from '../utils/parsers';
 
 export default function FileUpload({ inline = false, onDone }) {
-  const { addParticipantData, addBhavcopyData } = useData();
+  const { addParticipantData, addBhavcopyData, addCommodityData } = useData();
   const [results, setResults] = useState([]);
   const [processing, setProcessing] = useState(false);
 
@@ -39,6 +40,10 @@ export default function FileUpload({ inline = false, onDone }) {
                 parsed = parseBhavcopyOptions(text, file.name);
                 addBhavcopyData(parsed);
                 break;
+              case 'commodity':
+                parsed = parseCommodityBhavcopy(text, file.name);
+                addCommodityData(parsed);
+                break;
               default:
                 error = 'Unrecognised CSV format';
             }
@@ -50,7 +55,7 @@ export default function FileUpload({ inline = false, onDone }) {
             name: file.name,
             fileType,
             date: parsed?.date || '?',
-            recordCount: parsed?.participants?.length || parsed?.records?.length || 0,
+            recordCount: parsed?.participants?.length || parsed?.records?.length || parsed?.totalFutures + parsed?.totalOptions || 0,
             error,
           });
         };
@@ -94,7 +99,7 @@ export default function FileUpload({ inline = false, onDone }) {
           {isDragActive ? 'Drop files here...' : 'Drag & drop CSV files here'}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Supports: Participant OI, F&amp;O Bhavcopy (Futures &amp; Options)
+          Supports: Participant OI, F&amp;O Bhavcopy (Futures &amp; Options), MCX Commodity, Currency
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
           Click to browse &bull; Multiple files supported

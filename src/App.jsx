@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import {
   DarkMode, LightMode, CloudUpload, ShowChart, Assessment, Compare, TipsAndUpdates,
-  Timeline, Science, Star, Map, DeleteSweep, Public,
+  Timeline, Science, Star, Map, DeleteSweep, Public, OilBarrel, LinearScale,
 } from '@mui/icons-material';
 import { createAppTheme } from './theme';
 import { useData } from './context/DataContext';
@@ -22,21 +22,24 @@ import Watchlist from './components/Watchlist';
 import SectorHeatmap from './components/SectorHeatmap';
 import SentimentScorecard from './components/SentimentScorecard';
 import GlobalMarketContext from './components/GlobalMarketContext';
+import CommodityDashboard from './components/CommodityDashboard';
+import PivotLevels from './components/PivotLevels';
 
 export default function App() {
-  const { darkMode, setDarkMode, participantData, bhavcopyData, removeParticipantData, removeBhavcopyData, clearAll } = useData();
+  const { darkMode, setDarkMode, participantData, bhavcopyData, commodityData, removeParticipantData, removeBhavcopyData, removeCommodityData, clearAll } = useData();
   const theme = useMemo(() => createAppTheme(darkMode), [darkMode]);
   const [tab, setTab] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const totalFiles = participantData.length + bhavcopyData.length;
+  const totalFiles = participantData.length + bhavcopyData.length + commodityData.length;
 
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       if (e.key >= '1' && e.key <= '9') { e.preventDefault(); setTab(parseInt(e.key) - 1); }
+      if (e.key === '0') { e.preventDefault(); setTab(9); }
       if (e.key === 'd' || e.key === 'D') { e.preventDefault(); setDarkMode(!darkMode); }
       if (e.key === 'u' || e.key === 'U') { e.preventDefault(); setUploadOpen(true); }
     };
@@ -97,6 +100,16 @@ export default function App() {
                   onDelete={() => removeBhavcopyData(f.date, f.type)}
                 />
               ))}
+              {commodityData.map((f) => (
+                <Chip
+                  key={`c-${f.date}`}
+                  label={`Commodity – ${formatDate(f.date)} (${f.totalFutures}F/${f.totalOptions}O)`}
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  onDelete={() => removeCommodityData(f.date)}
+                />
+              ))}
             </Stack>
           </Box>
         )}
@@ -120,17 +133,19 @@ export default function App() {
             <Tab icon={<Map />} iconPosition="start" label="Sectors" />
             <Tab icon={<TipsAndUpdates />} iconPosition="start" label="Insights" />
             <Tab icon={<Public />} iconPosition="start" label="Global Context" />
+            <Tab icon={<OilBarrel />} iconPosition="start" label="Commodities" />
+            <Tab icon={<LinearScale />} iconPosition="start" label="Pivot Levels" />
           </Tabs>
         </Box>
 
         {/* ─── Content ─── */}
         <Box sx={{ flex: 1, p: { xs: 1, md: 3 }, overflow: 'auto' }}>
-          {totalFiles === 0 ? (
+          {totalFiles === 0 && tab < 8 ? (
             <FileUpload inline onDone={() => {}} />
           ) : (
             <>
-              {/* Sentiment Scorecard — always visible at top */}
-              <SentimentScorecard />
+              {/* Sentiment Scorecard — always visible at top (if equity data exists) */}
+              {participantData.length > 0 && <SentimentScorecard />}
 
               {tab === 0 && <ParticipantDashboard />}
               {tab === 1 && <BhavcopyDashboard />}
@@ -141,6 +156,8 @@ export default function App() {
               {tab === 6 && <SectorHeatmap />}
               {tab === 7 && <InsightsPanel />}
               {tab === 8 && <GlobalMarketContext />}
+              {tab === 9 && <CommodityDashboard />}
+              {tab === 10 && <PivotLevels />}
             </>
           )}
         </Box>

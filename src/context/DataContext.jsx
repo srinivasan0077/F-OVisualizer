@@ -5,6 +5,7 @@ import {
   saveSetting, loadSetting,
   saveWatchlistSymbol, removeWatchlistSymbol as removeWatchlistDB, loadWatchlist,
   saveMarketContext, loadAllMarketContext, deleteMarketContext,
+  saveCommodityData, loadAllCommodityData, deleteCommodityData,
   clearAllData,
 } from '../utils/storage';
 
@@ -16,24 +17,27 @@ export function DataProvider({ children }) {
   const [darkMode, setDarkMode] = useState(true);
   const [watchlist, setWatchlist] = useState([]);
   const [marketContextData, setMarketContextData] = useState([]);
+  const [commodityData, setCommodityData] = useState([]);
   const [storageReady, setStorageReady] = useState(false);
 
   // Load persisted data on mount
   useEffect(() => {
     (async () => {
       try {
-        const [pData, bData, dm, wl, mc] = await Promise.all([
+        const [pData, bData, dm, wl, mc, cd] = await Promise.all([
           loadAllParticipantData(),
           loadAllBhavcopyData(),
           loadSetting('darkMode', true),
           loadWatchlist(),
           loadAllMarketContext(),
+          loadAllCommodityData(),
         ]);
         if (pData.length) setParticipantData(pData);
         if (bData.length) setBhavcopyData(bData);
         setDarkMode(dm);
         setWatchlist(wl);
         if (mc.length) setMarketContextData(mc);
+        if (cd.length) setCommodityData(cd);
       } catch (e) {
         console.warn('Failed to load persisted data:', e);
       }
@@ -102,6 +106,25 @@ export function DataProvider({ children }) {
     removeWatchlistDB(symbol).catch(() => {});
   }, []);
 
+  // Commodity Data
+  const addCommodityData = useCallback((entry) => {
+    setCommodityData((prev) => {
+      const idx = prev.findIndex((f) => f.date === entry.date);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = entry;
+        return next;
+      }
+      return [...prev, entry].sort((a, b) => a.date.localeCompare(b.date));
+    });
+    saveCommodityData(entry).catch(() => {});
+  }, []);
+
+  const removeCommodityData = useCallback((date) => {
+    setCommodityData((prev) => prev.filter((f) => f.date !== date));
+    deleteCommodityData(date).catch(() => {});
+  }, []);
+
   // Market Context
   const addMarketContext = useCallback((entry) => {
     setMarketContextData((prev) => {
@@ -136,6 +159,9 @@ export function DataProvider({ children }) {
         watchlist,
         addToWatchlist,
         removeFromWatchlist,
+        commodityData,
+        addCommodityData,
+        removeCommodityData,
         marketContextData,
         addMarketContext,
         removeMarketContext,

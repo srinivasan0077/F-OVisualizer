@@ -1,13 +1,14 @@
 /* ───────── IndexedDB Persistence Layer ───────── */
 
 const DB_NAME = 'fno-visualizer';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORES = {
   participant: 'participantData',
   bhavcopy: 'bhavcopyData',
   settings: 'settings',
   watchlist: 'watchlist',
   marketContext: 'marketContext',
+  commodity: 'commodityData',
 };
 
 function openDB() {
@@ -25,6 +26,8 @@ function openDB() {
         db.createObjectStore(STORES.watchlist, { keyPath: 'symbol' });
       if (!db.objectStoreNames.contains(STORES.marketContext))
         db.createObjectStore(STORES.marketContext, { keyPath: 'date' });
+      if (!db.objectStoreNames.contains(STORES.commodity))
+        db.createObjectStore(STORES.commodity, { keyPath: 'date' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -190,6 +193,38 @@ export async function deleteMarketContext(date) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.marketContext, 'readwrite');
     tx.objectStore(STORES.marketContext).delete(date);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/* ───── Commodity Data ───── */
+
+export async function saveCommodityData(entry) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES.commodity, 'readwrite');
+    tx.objectStore(STORES.commodity).put(entry);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function loadAllCommodityData() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES.commodity, 'readonly');
+    const req = tx.objectStore(STORES.commodity).getAll();
+    req.onsuccess = () => resolve(req.result.sort((a, b) => a.date.localeCompare(b.date)));
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function deleteCommodityData(date) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES.commodity, 'readwrite');
+    tx.objectStore(STORES.commodity).delete(date);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
