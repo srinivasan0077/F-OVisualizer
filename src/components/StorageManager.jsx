@@ -1,15 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Box, Typography, Button, Grid, Chip, Stack, Alert,
+  Box, Typography, Button, Grid, Chip, Stack, Alert, TextField,
   Dialog, DialogTitle, DialogContent, DialogActions, LinearProgress,
-  Card, CardContent, Divider,
+  Card, CardContent, Divider, IconButton, Tooltip, Tabs, Tab,
+  List, ListItem, ListItemText, ListItemSecondaryAction, Checkbox, Paper,
 } from '@mui/material';
 import {
-  Storage, FileDownload, FileUpload, Cloud,
+  Storage, FileDownload, FileUpload, Cloud, Delete, DeleteSweep,
+  SelectAll, CheckBox, CheckBoxOutlineBlank,
 } from '@mui/icons-material';
 import { getStoreCounts, exportAllData, importAllData } from '../utils/storage';
 import { isSupabaseConfigured } from '../utils/supabase';
 import { useData } from '../context/DataContext';
+import { formatDate } from '../utils/parsers';
 
 const STORE_LABELS = {
   participantData: { label: 'Participant OI', icon: '📊' },
@@ -22,10 +25,17 @@ const STORE_LABELS = {
 };
 
 export default function StorageManager({ open, onClose }) {
-  const { storageReady } = useData();
+  const {
+    storageReady, participantData, bhavcopyData, commodityData, marketContextData, journalData,
+    removeParticipantData, removeBhavcopyData, removeCommodityData, removeMarketContext, removeJournalEntry,
+    clearAll,
+  } = useData();
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
+  const [manageTab, setManageTab] = useState(0);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkDate, setBulkDate] = useState('');
 
   const refreshCounts = useCallback(async () => {
     try { setCounts(await getStoreCounts()); } catch { setCounts({}); }
@@ -34,6 +44,55 @@ export default function StorageManager({ open, onClose }) {
   useEffect(() => {
     if (open && storageReady) refreshCounts();
   }, [open, storageReady, refreshCounts]);
+
+  // Reset selection when tab changes
+  useEffect(() => { setSelected(new Set()); setBulkDate(''); }, [manageTab]);
+
+  // Build list items for current tab
+  const dataItems = useMemo(() => {
+    switch (manageTab) {
+      case 0: return participantData.map(f => ({ key: f.date, label: `Participant OI – ${formatDate(f.date)}`, date: f.date, color: 'primary' }));
+      case 1: return bhavcopyData.map(f => ({ key: `${f.date}-${f.type}`, label: `${f.type === 'futures' ? 'Futures' : 'Options'} – ${formatDate(f.date)}`, date: f.date, type: f.type, color: 'secondary' }));
+      case 2: return commodityData.map(f => ({ key: f.date, label: `Commodity – ${formatDate(f.date)} (${f.totalFutures || 0}F/${f.totalOptions || 0}O)`, date: f.date, color: 'warning' }));
+      case 3: return marketContextData.map(f => ({ key: f.date, label: `Market Context – ${formatDate(f.date)}`, date: f.date, color: 'info' }));
+      case 4: return journalData.map(f => ({ key: f.date, label: `Journal – ${formatDate(f.date)}`, date: f.date, color: 'success' }));
+      default: return [];
+    }
+  }, [manageTab, participantData, bhavcopyData, commodityData, marketContextData, journalData]);
+
+  const toggleSelect = (key) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelected(new Set(dataItems.map(i => i.key)));
+  const selectNone = () => setSelected(new Set());
+
+  const selectBeforeDate = () => {
+    if (!bulkDate) return;
+    setSelected(new Set(dataItems.filter(i => i.date <= bulkDate).map(i => i.key)));
+  };
+
+  const deleteSelected = async () => {
+    setLoading(true);
+    const items = dataItems.filter(i => selected.has(i.key));
+    for (const item of items) {
+      switch (manageTab) {
+        case 0: await removeParticipantData(item.date); break;
+        case 1: await removeBhavcopyData(item.date, item.type); break;
+        case 2: await removeCommodityData(item.date); break;
+        case 3: await removeMarketContext(item.date); break;
+        case 4: await removeJournalEntry(item.date); break;
+      }
+    }
+    setSelected(new Set());
+    setMessage({ type: 'success', text: `Deleted ${items.length} entries` });
+    refreshCounts();
+    setLoading(false);
+  };
 
   const handleExport = async () => {
     setLoading(true);
@@ -70,6 +129,7 @@ export default function StorageManager({ open, onClose }) {
 
   const totalRecords = Object.values(counts).reduce((s, v) => s + v, 0);
   const connected = isSupabaseConfigured();
+  const tabLabels = ['Participant OI', 'Bhavcopy', 'Commodity', 'Market Context', 'Journal'];
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -81,26 +141,84 @@ export default function StorageManager({ open, onClose }) {
         {message && <Alert severity={message.type} onClose={() => setMessage(null)} sx={{ mb: 2 }}>{message.text}</Alert>}
 
         {/* Connection status */}
-        <Alert severity={connected ? 'success' : 'error'} icon={<Cloud />} sx={{ mb: 2 }}>
+        <Alert severity={connected ? 'success' : 'error'} icon={<Cloud />} sx={{ mb: 2 }} variant="outlined">
           {connected
-            ? '✅ Connected to Supabase — all data is stored in the cloud automatically.'
-            : '❌ Supabase not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment variables.'}
+            ? `✅ Supabase connected — ${totalRecords} total records`
+            : '❌ Supabase not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'}
         </Alert>
 
         {/* Store Counts */}
-        <Typography variant="subtitle2" gutterBottom>Supabase Records ({totalRecords} total)</Typography>
-        <Grid container spacing={1} sx={{ mb: 3 }}>
+        <Grid container spacing={1} sx={{ mb: 2 }}>
           {Object.entries(STORE_LABELS).map(([key, meta]) => (
-            <Grid item xs={6} sm={4} md={3} key={key}>
-              <Card variant="outlined">
-                <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
-                  <Typography variant="caption">{meta.icon} {meta.label}</Typography>
+            <Grid item xs={4} sm={3} md={12/7} key={key}>
+              <Card variant="outlined" sx={{ textAlign: 'center' }}>
+                <CardContent sx={{ py: 0.5, px: 1, '&:last-child': { pb: 0.5 } }}>
+                  <Typography variant="caption" noWrap>{meta.icon} {meta.label}</Typography>
                   <Typography variant="h6" fontWeight={700}>{counts[key] || 0}</Typography>
                 </CardContent>
               </Card>
             </Grid>
           ))}
         </Grid>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* ─── Data Manager ─── */}
+        <Typography variant="subtitle2" gutterBottom>🗂️ Manage Data</Typography>
+        <Tabs value={manageTab} onChange={(_, v) => setManageTab(v)} variant="scrollable" scrollButtons="auto" sx={{ mb: 1 }}>
+          {tabLabels.map((l, i) => <Tab key={i} label={`${l} (${[participantData, bhavcopyData, commodityData, marketContextData, journalData][i].length})`} sx={{ textTransform: 'none', minHeight: 36, py: 0 }} />)}
+        </Tabs>
+
+        {/* Bulk actions */}
+        <Paper variant="outlined" sx={{ p: 1, mb: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Button size="small" onClick={selectAll} startIcon={<SelectAll />}>All</Button>
+          <Button size="small" onClick={selectNone}>None</Button>
+          <Divider orientation="vertical" flexItem />
+          <TextField size="small" type="date" label="Select before date" value={bulkDate} onChange={e => setBulkDate(e.target.value)}
+            InputLabelProps={{ shrink: true }} sx={{ width: 180 }} />
+          <Button size="small" onClick={selectBeforeDate} disabled={!bulkDate} variant="outlined">Select</Button>
+          <Box sx={{ flexGrow: 1 }} />
+          {selected.size > 0 && (
+            <Button size="small" color="error" variant="contained" startIcon={<Delete />} onClick={deleteSelected} disabled={loading}>
+              Delete {selected.size} selected
+            </Button>
+          )}
+        </Paper>
+
+        {/* Item list */}
+        <Paper variant="outlined" sx={{ maxHeight: 280, overflow: 'auto' }}>
+          {dataItems.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>No data in this category</Typography>
+          ) : (
+            <List dense disablePadding>
+              {dataItems.map(item => (
+                <ListItem key={item.key} button onClick={() => toggleSelect(item.key)}
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: selected.has(item.key) ? 'action.selected' : 'transparent' }}>
+                  <Checkbox size="small" checked={selected.has(item.key)} sx={{ mr: 1 }} />
+                  <ListItemText
+                    primary={item.label}
+                    primaryTypographyProps={{ variant: 'body2' }}
+                  />
+                  <ListItemSecondaryAction>
+                    <IconButton size="small" color="error" onClick={(e) => {
+                      e.stopPropagation();
+                      switch (manageTab) {
+                        case 0: removeParticipantData(item.date); break;
+                        case 1: removeBhavcopyData(item.date, item.type); break;
+                        case 2: removeCommodityData(item.date); break;
+                        case 3: removeMarketContext(item.date); break;
+                        case 4: removeJournalEntry(item.date); break;
+                      }
+                      refreshCounts();
+                    }}>
+                      <Delete fontSize="small" />
+                    </IconButton>
+                  </ListItemSecondaryAction>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </Paper>
 
         <Divider sx={{ my: 2 }} />
 

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import {
-  AppBar, Toolbar, Typography, IconButton, Tabs, Tab, Box, Chip, Stack, Badge,
+  AppBar, Toolbar, Typography, IconButton, Tabs, Tab, Box, Chip, Badge,
   Dialog, useMediaQuery, Tooltip, Button,
 } from '@mui/material';
 import {
@@ -10,7 +10,6 @@ import {
 } from '@mui/icons-material';
 import { createAppTheme } from './theme';
 import { useData } from './context/DataContext';
-import { formatDate } from './utils/parsers';
 import FileUpload from './components/FileUpload';
 import ParticipantDashboard from './components/ParticipantDashboard';
 import BhavcopyDashboard from './components/BhavcopyDashboard';
@@ -28,7 +27,7 @@ import TradingJournal from './components/TradingJournal';
 import StorageManager from './components/StorageManager';
 
 export default function App() {
-  const { darkMode, setDarkMode, participantData, bhavcopyData, commodityData, removeParticipantData, removeBhavcopyData, removeCommodityData, clearAll } = useData();
+  const { darkMode, setDarkMode, participantData, bhavcopyData, commodityData, clearAll } = useData();
   const theme = useMemo(() => createAppTheme(darkMode), [darkMode]);
   const [tab, setTab] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -84,41 +83,15 @@ export default function App() {
           </Toolbar>
         </AppBar>
 
-        {/* ─── File chips ─── */}
+        {/* ─── Data summary bar ─── */}
         {totalFiles > 0 && (
-          <Box sx={{ px: 2, py: 1, bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider', overflowX: 'auto' }}>
-            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-              {participantData.map((f) => (
-                <Chip
-                  key={`p-${f.date}`}
-                  label={`Participant OI – ${formatDate(f.date)}`}
-                  size="small"
-                  color="primary"
-                  variant="outlined"
-                  onDelete={() => removeParticipantData(f.date)}
-                />
-              ))}
-              {bhavcopyData.map((f) => (
-                <Chip
-                  key={`b-${f.date}-${f.type}`}
-                  label={`${f.type === 'futures' ? 'Futures' : 'Options'} Bhavcopy – ${formatDate(f.date)}`}
-                  size="small"
-                  color="secondary"
-                  variant="outlined"
-                  onDelete={() => removeBhavcopyData(f.date, f.type)}
-                />
-              ))}
-              {commodityData.map((f) => (
-                <Chip
-                  key={`c-${f.date}`}
-                  label={`Commodity – ${formatDate(f.date)} (${f.totalFutures}F/${f.totalOptions}O)`}
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                  onDelete={() => removeCommodityData(f.date)}
-                />
-              ))}
-            </Stack>
+          <Box sx={{ px: 2, py: 0.5, bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}
+            onClick={() => setStorageOpen(true)}>
+            <Typography variant="caption" color="text.secondary">📦 Data:</Typography>
+            {participantData.length > 0 && <Chip label={`${participantData.length} Participant`} size="small" color="primary" variant="outlined" />}
+            {bhavcopyData.length > 0 && <Chip label={`${bhavcopyData.length} Bhavcopy`} size="small" color="secondary" variant="outlined" />}
+            {commodityData.length > 0 && <Chip label={`${commodityData.length} Commodity`} size="small" color="warning" variant="outlined" />}
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>Click to manage →</Typography>
           </Box>
         )}
 
