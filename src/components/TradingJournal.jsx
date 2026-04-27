@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   Box, Paper, Typography, TextField, Button, Grid, Chip, Rating, Divider,
   Card, CardContent, Stack, IconButton, Tooltip, ToggleButton, ToggleButtonGroup,
-  Alert, Slider, Select, MenuItem, FormControl, InputLabel, Badge,
+  Alert, Select, MenuItem, FormControl, InputLabel, Badge,
 } from '@mui/material';
 import {
   Save, Delete, NavigateBefore, NavigateNext, Today, TrendingUp, TrendingDown,
@@ -154,8 +154,7 @@ export default function TradingJournal() {
                   </FormControl>
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                  <Typography variant="caption" gutterBottom>Confidence Level: {form.confidence}/10</Typography>
-                  <Slider value={form.confidence} onChange={(_, v) => updateField('confidence', v)} min={1} max={10} marks valueLabelDisplay="auto" />
+                  <TextField fullWidth size="small" label="Confidence (1-10)" type="number" inputProps={{ min: 1, max: 10 }} value={form.confidence} onChange={e => updateField('confidence', Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))} />
                 </Grid>
                 <Grid item xs={12} sm={4}>
                   <TextField fullWidth size="small" label="Risk Budget (₹)" value={form.riskBudget} onChange={e => updateField('riskBudget', e.target.value)} />
@@ -167,10 +166,10 @@ export default function TradingJournal() {
                   <TextField fullWidth size="small" label="Watch Symbols" value={form.watchSymbols} onChange={e => updateField('watchSymbols', e.target.value)} />
                 </Grid>
                 <Grid item xs={12}>
-                  <TextField fullWidth multiline rows={2} size="small" label="Trading Plan" value={form.plan} onChange={e => updateField('plan', e.target.value)} placeholder="What setups are you looking for today?" />
+                  <TextField fullWidth multiline minRows={2} size="small" label="Trading Plan" value={form.plan} onChange={e => updateField('plan', e.target.value)} placeholder="What setups are you looking for today?" />
                 </Grid>
                 <Grid item xs={12}>
-                  <TextField fullWidth multiline rows={2} size="small" label="Pre-Market Notes" value={form.preMarketNotes} onChange={e => updateField('preMarketNotes', e.target.value)} placeholder="SGX, global cues, news, FII activity..." />
+                  <TextField fullWidth multiline minRows={2} size="small" label="Pre-Market Notes" value={form.preMarketNotes} onChange={e => updateField('preMarketNotes', e.target.value)} placeholder="SGX, global cues, news, FII activity..." />
                 </Grid>
               </Grid>
             </Paper>
@@ -248,13 +247,13 @@ export default function TradingJournal() {
                   <Rating value={form.rating} onChange={(_, v) => updateField('rating', v)} size="large" />
                 </Grid>
                 <Grid item xs={12} sm={6}>
-                  <TextField fullWidth multiline rows={2} size="small" label="What Worked" value={form.whatWorked} onChange={e => updateField('whatWorked', e.target.value)} />
+                  <TextField fullWidth multiline minRows={2} size="small" label="What Worked" value={form.whatWorked} onChange={e => updateField('whatWorked', e.target.value)} />
                 </Grid>
                 <Grid item xs={12} sm={6}>
-                  <TextField fullWidth multiline rows={2} size="small" label="Mistakes / Lessons" value={form.mistakes} onChange={e => updateField('mistakes', e.target.value)} />
+                  <TextField fullWidth multiline minRows={2} size="small" label="Mistakes / Lessons" value={form.mistakes} onChange={e => updateField('mistakes', e.target.value)} />
                 </Grid>
                 <Grid item xs={12}>
-                  <TextField fullWidth multiline rows={2} size="small" label="Post-Market Notes" value={form.postMarketNotes} onChange={e => updateField('postMarketNotes', e.target.value)} />
+                  <TextField fullWidth multiline minRows={2} size="small" label="Post-Market Notes" value={form.postMarketNotes} onChange={e => updateField('postMarketNotes', e.target.value)} />
                 </Grid>
               </Grid>
             </Paper>
