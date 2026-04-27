@@ -20,7 +20,7 @@ export default function FileUpload({ inline = false, onDone }) {
     (file) =>
       new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
           const text = e.target.result;
           const fileType = detectFileType(text);
           let parsed = null;
@@ -30,19 +30,19 @@ export default function FileUpload({ inline = false, onDone }) {
             switch (fileType) {
               case 'participant':
                 parsed = parseParticipantOI(text, file.name);
-                addParticipantData(parsed);
+                await addParticipantData(parsed);
                 break;
               case 'futures':
                 parsed = parseBhavcopyFutures(text, file.name);
-                addBhavcopyData(parsed);
+                await addBhavcopyData(parsed);
                 break;
               case 'options':
                 parsed = parseBhavcopyOptions(text, file.name);
-                addBhavcopyData(parsed);
+                await addBhavcopyData(parsed);
                 break;
               case 'commodity':
                 parsed = parseCommodityBhavcopy(text, file.name);
-                addCommodityData(parsed);
+                await addCommodityData(parsed);
                 break;
               default:
                 error = 'Unrecognised CSV format';
@@ -62,7 +62,7 @@ export default function FileUpload({ inline = false, onDone }) {
         reader.onerror = () => resolve({ name: file.name, error: 'Failed to read file' });
         reader.readAsText(file);
       }),
-    [addParticipantData, addBhavcopyData],
+    [addParticipantData, addBhavcopyData, addCommodityData],
   );
 
   const onDrop = useCallback(

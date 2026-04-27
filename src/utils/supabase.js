@@ -1,34 +1,19 @@
-/* ───────── Supabase Cloud Sync Layer ───────── */
+/* ───────── Supabase Layer ───────── */
 import { createClient } from '@supabase/supabase-js';
+import pako from 'pako';
 
-// Configure these in Settings or via env
 const DEFAULT_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const DEFAULT_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
 let supabase = null;
-
-export function getSupabase() {
-  return supabase;
-}
 
 export function initSupabase(url, key) {
   if (!url || !key) return null;
   supabase = createClient(url, key);
   return supabase;
 }
-
-export function isSupabaseConfigured() {
-  return !!supabase;
-}
-
-export function isEnvConfigured() {
-  return !!(DEFAULT_URL && DEFAULT_KEY);
-}
-
-// Auto-init from env if available
-if (DEFAULT_URL && DEFAULT_KEY) {
-  initSupabase(DEFAULT_URL, DEFAULT_KEY);
-}
+export function isSupabaseConfigured() { return !!supabase; }
+export function isEnvConfigured() { return !!(DEFAULT_URL && DEFAULT_KEY); }
+if (DEFAULT_URL && DEFAULT_KEY) initSupabase(DEFAULT_URL, DEFAULT_KEY);
 
 /* ───── Table names ───── */
 const TABLES = {
@@ -41,7 +26,12 @@ const TABLES = {
   settings: 'settings',
 };
 
-/* ───── Generic CRUD ───── */
+const BUCKET = 'fno-data';
+
+// Tables that store big data in Storage bucket (not in DB)
+const FILE_TABLES = new Set([TABLES.participant, TABLES.bhavcopy, TABLES.commodity]);
+
+/* ───── DB helpers (metadata + small tables) ───── */
 
 export async function supaUpsert(table, data) {
   if (!supabase) return null;
@@ -52,9 +42,17 @@ export async function supaUpsert(table, data) {
 
 export async function supaFetchAll(table) {
   if (!supabase) return [];
-  const { data, error } = await supabase.from(table).select('*');
-  if (error) { console.warn(`Supabase fetch ${table}:`, error.message); return []; }
-  return data || [];
+  let allData = [], from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await supabase.from(table).select('*').range(from, from + pageSize - 1);
+    if (error) { console.warn(`Supabase fetch ${table}:`, error.message); break; }
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return allData;
 }
 
 export async function supaDelete(table, match) {
@@ -67,7 +65,6 @@ export async function supaDelete(table, match) {
 
 export async function supaClearTable(table) {
   if (!supabase) return;
-  // Use a condition that matches all rows
   const { error } = await supabase.from(table).delete().gte('created_at', '1970-01-01');
   if (error) console.warn(`Supabase clear ${table}:`, error.message);
 }
@@ -85,89 +82,111 @@ function getConflictKey(table) {
   }
 }
 
-/* ───── Sync: push all local data to Supabase ───── */
-export async function pushToCloud(allData) {
-  if (!supabase) throw new Error('Supabase not configured');
-  const results = {};
-  for (const [key, table] of Object.entries(TABLES)) {
-    const data = allData[key];
-    if (data && data.length > 0) {
-      // Transform to match table schema: wrap in { date, data } or { date, type, data } etc.
-      const rows = data.map(entry => toCloudRow(table, entry));
-      for (let i = 0; i < rows.length; i += 500) {
-        const chunk = rows.slice(i, i + 500);
-        const err = await supaUpsert(table, chunk);
-        if (err) results[key] = `Error: ${err.message}`;
-      }
-      if (!results[key]) results[key] = `${data.length} rows synced`;
-    } else {
-      results[key] = 'No data';
-    }
+/* ───── Storage Bucket helpers (for large data files) ───── */
+
+function filePath(table, entry) {
+  switch (table) {
+    case TABLES.bhavcopy: return `${table}/${entry.date}_${entry.type}.json.gz`;
+    default: return `${table}/${entry.date}.json.gz`;
   }
-  return results;
 }
 
-/* ───── Sync: pull all cloud data ───── */
-export async function pullFromCloud() {
-  if (!supabase) throw new Error('Supabase not configured');
-  const result = {};
-  for (const [key, table] of Object.entries(TABLES)) {
-    const rows = await supaFetchAll(table);
-    // Transform back: unwrap { date, data } → full object
-    result[key] = rows.map(row => fromCloudRow(table, row));
-  }
-  return result;
+export async function uploadFile(table, entry) {
+  if (!supabase) return;
+  const json = JSON.stringify(entry);
+  const compressed = pako.gzip(json);
+  const blob = new Blob([compressed], { type: 'application/gzip' });
+  const path = filePath(table, entry);
+
+  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
+    upsert: true,
+    contentType: 'application/gzip',
+  });
+  if (error) console.warn(`Storage upload ${path}:`, error.message);
+  return compressed.length; // return file size for metadata
 }
 
-/* ───── Row transformers ───── */
-function toCloudRow(table, entry) {
+export async function downloadFile(path) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  if (error) { console.warn(`Storage download ${path}:`, error.message); return null; }
+  const buffer = await data.arrayBuffer();
+  const decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+  return JSON.parse(decompressed);
+}
+
+export async function deleteFile(path) {
+  if (!supabase) return;
+  const { error } = await supabase.storage.from(BUCKET).remove([path]);
+  if (error) console.warn(`Storage delete ${path}:`, error.message);
+}
+
+export async function clearBucket(table) {
+  if (!supabase) return;
+  const { data } = await supabase.storage.from(BUCKET).list(table);
+  if (data?.length) {
+    const paths = data.map(f => `${table}/${f.name}`);
+    await supabase.storage.from(BUCKET).remove(paths);
+  }
+}
+
+/* ───── High-level: save/load/delete for file-backed tables ───── */
+
+export async function saveFileEntry(table, entry) {
+  // 1. Upload data to storage bucket
+  const fileSize = await uploadFile(table, entry);
+  // 2. Save metadata to DB
+  const meta = buildMeta(table, entry, fileSize);
+  await supaUpsert(table, meta);
+}
+
+export async function loadAllFileEntries(table) {
+  // 1. Get metadata from DB
+  const metas = await supaFetchAll(table);
+  if (!metas.length) return [];
+  // 2. Download each file from storage
+  const entries = await Promise.all(
+    metas.map(async (meta) => {
+      const path = metaToPath(table, meta);
+      const data = await downloadFile(path);
+      return data;
+    })
+  );
+  return entries.filter(Boolean);
+}
+
+export async function deleteFileEntry(table, match) {
+  // Build path from match
+  const path = matchToPath(table, match);
+  await deleteFile(path);
+  await supaDelete(table, match);
+}
+
+function buildMeta(table, entry, fileSize) {
   switch (table) {
     case TABLES.participant:
-      return { date: entry.date, data: entry };
+      return { date: entry.date, record_count: entry.participants?.length || 0, file_size: fileSize || 0 };
     case TABLES.bhavcopy:
-      return { date: entry.date, type: entry.type, data: entry };
+      return { date: entry.date, type: entry.type, record_count: entry.records?.length || 0, file_size: fileSize || 0 };
     case TABLES.commodity:
-      return { date: entry.date, data: entry };
-    case TABLES.marketContext:
-      return { date: entry.date, data: entry };
-    case TABLES.journal:
-      return { date: entry.date, data: entry };
-    case TABLES.watchlist:
-      return { symbol: entry.symbol || entry };
-    case TABLES.settings:
-      return { key: entry.key, value: entry.value };
+      return { date: entry.date, total_futures: entry.totalFutures || 0, total_options: entry.totalOptions || 0, file_size: fileSize || 0 };
     default:
       return entry;
   }
 }
 
-function fromCloudRow(table, row) {
+function metaToPath(table, meta) {
   switch (table) {
-    case TABLES.participant:
-    case TABLES.bhavcopy:
-    case TABLES.commodity:
-    case TABLES.marketContext:
-    case TABLES.journal:
-      return row.data || row;
-    case TABLES.watchlist:
-      return { symbol: row.symbol };
-    case TABLES.settings:
-      return { key: row.key, value: row.value };
-    default:
-      return row;
+    case TABLES.bhavcopy: return `${table}/${meta.date}_${meta.type}.json.gz`;
+    default: return `${table}/${meta.date}.json.gz`;
   }
 }
 
-/* ───── Background sync helper (fire & forget) ───── */
-export function bgSync(table, entry) {
-  if (!supabase) return;
-  const row = toCloudRow(table, entry);
-  supaUpsert(table, row).catch(() => {});
+function matchToPath(table, match) {
+  switch (table) {
+    case TABLES.bhavcopy: return `${table}/${match.date}_${match.type}.json.gz`;
+    default: return `${table}/${match.date}.json.gz`;
+  }
 }
 
-export function bgDelete(table, match) {
-  if (!supabase) return;
-  supaDelete(table, match).catch(() => {});
-}
-
-export { TABLES };
+export { TABLES, BUCKET, FILE_TABLES };

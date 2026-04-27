@@ -1,13 +1,19 @@
-/* ───────── Storage Layer (Supabase Only) ───────── */
-import { supaUpsert, supaFetchAll, supaDelete, supaClearTable, TABLES, isSupabaseConfigured } from './supabase';
+/* ───────── Storage Layer ───────── */
+/* Big data (participant, bhavcopy, commodity) → Supabase Storage bucket (gzipped)
+   Small data (journal, market context, watchlist, settings) → Supabase DB (JSONB) */
 
-/* ── Row transformers ── */
+import {
+  supaUpsert, supaFetchAll, supaDelete, supaClearTable,
+  saveFileEntry, loadAllFileEntries, deleteFileEntry, clearBucket,
+  TABLES, isSupabaseConfigured,
+} from './supabase';
+
+/* ── Row transformers (for small DB-only tables) ── */
 function toRow(table, entry) {
   switch (table) {
-    case TABLES.bhavcopy: return { date: entry.date, type: entry.type, data: entry };
     case TABLES.watchlist: return { symbol: entry.symbol || entry };
     case TABLES.settings: return { key: entry.key, value: entry.value };
-    default: return { date: entry.date, data: entry };
+    default: return { date: entry.date, data: entry }; // marketContext, journal
   }
 }
 function fromRow(table, row) {
@@ -18,28 +24,50 @@ function fromRow(table, row) {
   }
 }
 
-/* ───── Generic helpers ───── */
-async function save(table, entry) {
+/* ───── Generic helpers (small tables: DB only) ───── */
+async function saveSmall(table, entry) {
   await supaUpsert(table, toRow(table, entry));
 }
-async function loadAll(table, sortFn) {
+async function loadAllSmall(table, sortFn) {
   const rows = await supaFetchAll(table);
   const items = rows.map(r => fromRow(table, r));
   return sortFn ? items.sort(sortFn) : items;
 }
-async function remove(table, match) {
+async function removeSmall(table, match) {
   await supaDelete(table, match);
 }
 
+/* ═══════════════════════════════════════════════════
+   FILE-BACKED TABLES (large data → Storage bucket)
+   ═══════════════════════════════════════════════════ */
+
 /* ───── Participant Data ───── */
-export const saveParticipantData = (entry) => save(TABLES.participant, entry);
-export const loadAllParticipantData = () => loadAll(TABLES.participant, (a, b) => a.date.localeCompare(b.date));
-export const deleteParticipantData = (date) => remove(TABLES.participant, { date });
+export const saveParticipantData = (entry) => saveFileEntry(TABLES.participant, entry);
+export async function loadAllParticipantData() {
+  const entries = await loadAllFileEntries(TABLES.participant);
+  return entries.sort((a, b) => a.date.localeCompare(b.date));
+}
+export const deleteParticipantData = (date) => deleteFileEntry(TABLES.participant, { date });
 
 /* ───── Bhavcopy Data ───── */
-export const saveBhavcopyData = (entry) => save(TABLES.bhavcopy, entry);
-export const loadAllBhavcopyData = () => loadAll(TABLES.bhavcopy, (a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
-export const deleteBhavcopyData = (date, type) => remove(TABLES.bhavcopy, { date, type });
+export const saveBhavcopyData = (entry) => saveFileEntry(TABLES.bhavcopy, entry);
+export async function loadAllBhavcopyData() {
+  const entries = await loadAllFileEntries(TABLES.bhavcopy);
+  return entries.sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
+}
+export const deleteBhavcopyData = (date, type) => deleteFileEntry(TABLES.bhavcopy, { date, type });
+
+/* ───── Commodity Data ───── */
+export const saveCommodityData = (entry) => saveFileEntry(TABLES.commodity, entry);
+export async function loadAllCommodityData() {
+  const entries = await loadAllFileEntries(TABLES.commodity);
+  return entries.sort((a, b) => a.date.localeCompare(b.date));
+}
+export const deleteCommodityData = (date) => deleteFileEntry(TABLES.commodity, { date });
+
+/* ═══════════════════════════════════════════════════
+   DB-ONLY TABLES (small data → JSONB columns)
+   ═══════════════════════════════════════════════════ */
 
 /* ───── Settings ───── */
 export async function saveSetting(key, value) {
@@ -54,39 +82,38 @@ export async function loadSetting(key, defaultValue) {
 
 /* ───── Watchlist ───── */
 export const saveWatchlistSymbol = (symbol) => supaUpsert(TABLES.watchlist, { symbol });
-export const removeWatchlistSymbol = (symbol) => remove(TABLES.watchlist, { symbol });
+export const removeWatchlistSymbol = (symbol) => removeSmall(TABLES.watchlist, { symbol });
 export async function loadWatchlist() {
   const rows = await supaFetchAll(TABLES.watchlist);
   return rows.map(r => r.symbol);
 }
 
 /* ───── Market Context ───── */
-export const saveMarketContext = (entry) => save(TABLES.marketContext, entry);
-export const loadAllMarketContext = () => loadAll(TABLES.marketContext, (a, b) => a.date.localeCompare(b.date));
-export const deleteMarketContext = (date) => remove(TABLES.marketContext, { date });
-
-/* ───── Commodity Data ───── */
-export const saveCommodityData = (entry) => save(TABLES.commodity, entry);
-export const loadAllCommodityData = () => loadAll(TABLES.commodity, (a, b) => a.date.localeCompare(b.date));
-export const deleteCommodityData = (date) => remove(TABLES.commodity, { date });
+export const saveMarketContext = (entry) => saveSmall(TABLES.marketContext, entry);
+export const loadAllMarketContext = () => loadAllSmall(TABLES.marketContext, (a, b) => a.date.localeCompare(b.date));
+export const deleteMarketContext = (date) => removeSmall(TABLES.marketContext, { date });
 
 /* ───── Journal Data ───── */
-export const saveJournalEntry = (entry) => save(TABLES.journal, entry);
-export const loadAllJournalEntries = () => loadAll(TABLES.journal, (a, b) => a.date.localeCompare(b.date));
-export const deleteJournalEntry = (date) => remove(TABLES.journal, { date });
+export const saveJournalEntry = (entry) => saveSmall(TABLES.journal, entry);
+export const loadAllJournalEntries = () => loadAllSmall(TABLES.journal, (a, b) => a.date.localeCompare(b.date));
+export const deleteJournalEntry = (date) => removeSmall(TABLES.journal, { date });
 
-/* ───── Clear all data ───── */
+/* ═══════════════════════════════════════════════════
+   BULK OPERATIONS
+   ═══════════════════════════════════════════════════ */
+
 export async function clearAllData() {
   await Promise.all([
-    supaClearTable(TABLES.participant),
-    supaClearTable(TABLES.bhavcopy),
-    supaClearTable(TABLES.commodity),
+    // File-backed: clear bucket folders + DB metadata
+    clearBucket(TABLES.participant), supaClearTable(TABLES.participant),
+    clearBucket(TABLES.bhavcopy), supaClearTable(TABLES.bhavcopy),
+    clearBucket(TABLES.commodity), supaClearTable(TABLES.commodity),
+    // DB-only
     supaClearTable(TABLES.marketContext),
     supaClearTable(TABLES.journal),
   ]);
 }
 
-/* ───── Export / Import ───── */
 export async function exportAllData() {
   const [participant, bhavcopy, watchlist, marketContext, commodity, journal] = await Promise.all([
     loadAllParticipantData(),

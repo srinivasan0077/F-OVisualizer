@@ -64,7 +64,7 @@ export function DataProvider({ children }) {
       }
       return [...prev, entry].sort((a, b) => a.date.localeCompare(b.date));
     });
-    saveParticipantData(entry).catch(() => {});
+    return saveParticipantData(entry).catch(e => console.warn('Save participant failed:', e));
   }, []);
 
   const addBhavcopyData = useCallback((entry) => {
@@ -77,7 +77,7 @@ export function DataProvider({ children }) {
       }
       return [...prev, entry].sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
     });
-    saveBhavcopyData(entry).catch(() => {});
+    return saveBhavcopyData(entry).catch(e => console.warn('Save bhavcopy failed:', e));
   }, []);
 
   const removeParticipantData = useCallback((date) => {
@@ -93,6 +93,9 @@ export function DataProvider({ children }) {
   const clearAll = useCallback(async () => {
     setParticipantData([]);
     setBhavcopyData([]);
+    setCommodityData([]);
+    setMarketContextData([]);
+    setJournalData([]);
     await clearAllData().catch(() => {});
   }, []);
 
@@ -121,7 +124,7 @@ export function DataProvider({ children }) {
       }
       return [...prev, entry].sort((a, b) => a.date.localeCompare(b.date));
     });
-    saveCommodityData(entry).catch(() => {});
+    return saveCommodityData(entry).catch(e => console.warn('Save commodity failed:', e));
   }, []);
 
   const removeCommodityData = useCallback((date) => {
