@@ -6,6 +6,7 @@ import {
   saveWatchlistSymbol, removeWatchlistSymbol as removeWatchlistDB, loadWatchlist,
   saveMarketContext, loadAllMarketContext, deleteMarketContext,
   saveCommodityData, loadAllCommodityData, deleteCommodityData,
+  saveJournalEntry, loadAllJournalEntries, deleteJournalEntry,
   clearAllData,
 } from '../utils/storage';
 
@@ -18,19 +19,21 @@ export function DataProvider({ children }) {
   const [watchlist, setWatchlist] = useState([]);
   const [marketContextData, setMarketContextData] = useState([]);
   const [commodityData, setCommodityData] = useState([]);
+  const [journalData, setJournalData] = useState([]);
   const [storageReady, setStorageReady] = useState(false);
 
   // Load persisted data on mount
   useEffect(() => {
     (async () => {
       try {
-        const [pData, bData, dm, wl, mc, cd] = await Promise.all([
+        const [pData, bData, dm, wl, mc, cd, jd] = await Promise.all([
           loadAllParticipantData(),
           loadAllBhavcopyData(),
           loadSetting('darkMode', true),
           loadWatchlist(),
           loadAllMarketContext(),
           loadAllCommodityData(),
+          loadAllJournalEntries(),
         ]);
         if (pData.length) setParticipantData(pData);
         if (bData.length) setBhavcopyData(bData);
@@ -38,6 +41,7 @@ export function DataProvider({ children }) {
         setWatchlist(wl);
         if (mc.length) setMarketContextData(mc);
         if (cd.length) setCommodityData(cd);
+        if (jd.length) setJournalData(jd);
       } catch (e) {
         console.warn('Failed to load persisted data:', e);
       }
@@ -144,6 +148,21 @@ export function DataProvider({ children }) {
     deleteMarketContext(date).catch(() => {});
   }, []);
 
+  // Journal
+  const addJournalEntry = useCallback((entry) => {
+    setJournalData((prev) => {
+      const idx = prev.findIndex((e) => e.date === entry.date);
+      if (idx >= 0) { const next = [...prev]; next[idx] = entry; return next; }
+      return [...prev, entry].sort((a, b) => a.date.localeCompare(b.date));
+    });
+    saveJournalEntry(entry).catch(() => {});
+  }, []);
+
+  const removeJournalEntry = useCallback((date) => {
+    setJournalData((prev) => prev.filter((e) => e.date !== date));
+    deleteJournalEntry(date).catch(() => {});
+  }, []);
+
   return (
     <DataContext.Provider
       value={{
@@ -165,6 +184,9 @@ export function DataProvider({ children }) {
         marketContextData,
         addMarketContext,
         removeMarketContext,
+        journalData,
+        addJournalEntry,
+        removeJournalEntry,
         storageReady,
       }}
     >

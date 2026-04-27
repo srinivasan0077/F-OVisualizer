@@ -1,244 +1,132 @@
-/* ───────── IndexedDB Persistence Layer ───────── */
+/* ───────── Storage Layer (Supabase Only) ───────── */
+import { supaUpsert, supaFetchAll, supaDelete, supaClearTable, TABLES, isSupabaseConfigured } from './supabase';
 
-const DB_NAME = 'fno-visualizer';
-const DB_VERSION = 3;
-const STORES = {
-  participant: 'participantData',
-  bhavcopy: 'bhavcopyData',
-  settings: 'settings',
-  watchlist: 'watchlist',
-  marketContext: 'marketContext',
-  commodity: 'commodityData',
-};
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORES.participant))
-        db.createObjectStore(STORES.participant, { keyPath: 'date' });
-      if (!db.objectStoreNames.contains(STORES.bhavcopy))
-        db.createObjectStore(STORES.bhavcopy, { keyPath: ['date', 'type'] });
-      if (!db.objectStoreNames.contains(STORES.settings))
-        db.createObjectStore(STORES.settings, { keyPath: 'key' });
-      if (!db.objectStoreNames.contains(STORES.watchlist))
-        db.createObjectStore(STORES.watchlist, { keyPath: 'symbol' });
-      if (!db.objectStoreNames.contains(STORES.marketContext))
-        db.createObjectStore(STORES.marketContext, { keyPath: 'date' });
-      if (!db.objectStoreNames.contains(STORES.commodity))
-        db.createObjectStore(STORES.commodity, { keyPath: 'date' });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+/* ── Row transformers ── */
+function toRow(table, entry) {
+  switch (table) {
+    case TABLES.bhavcopy: return { date: entry.date, type: entry.type, data: entry };
+    case TABLES.watchlist: return { symbol: entry.symbol || entry };
+    case TABLES.settings: return { key: entry.key, value: entry.value };
+    default: return { date: entry.date, data: entry };
+  }
+}
+function fromRow(table, row) {
+  switch (table) {
+    case TABLES.watchlist: return row.symbol;
+    case TABLES.settings: return { key: row.key, value: row.value };
+    default: return row.data || row;
+  }
 }
 
-async function txn(storeName, mode, fn) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, mode);
-    const store = tx.objectStore(storeName);
-    const result = fn(store);
-    tx.oncomplete = () => resolve(result.__result ?? undefined);
-    tx.onerror = () => reject(tx.error);
-    if (result instanceof IDBRequest) {
-      result.onsuccess = () => { result.__result = result.result; };
-    }
-  });
+/* ───── Generic helpers ───── */
+async function save(table, entry) {
+  await supaUpsert(table, toRow(table, entry));
+}
+async function loadAll(table, sortFn) {
+  const rows = await supaFetchAll(table);
+  const items = rows.map(r => fromRow(table, r));
+  return sortFn ? items.sort(sortFn) : items;
+}
+async function remove(table, match) {
+  await supaDelete(table, match);
 }
 
 /* ───── Participant Data ───── */
-
-export async function saveParticipantData(entry) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.participant, 'readwrite');
-    tx.objectStore(STORES.participant).put(entry);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function loadAllParticipantData() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.participant, 'readonly');
-    const req = tx.objectStore(STORES.participant).getAll();
-    req.onsuccess = () => resolve(req.result.sort((a, b) => a.date.localeCompare(b.date)));
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function deleteParticipantData(date) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.participant, 'readwrite');
-    tx.objectStore(STORES.participant).delete(date);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
+export const saveParticipantData = (entry) => save(TABLES.participant, entry);
+export const loadAllParticipantData = () => loadAll(TABLES.participant, (a, b) => a.date.localeCompare(b.date));
+export const deleteParticipantData = (date) => remove(TABLES.participant, { date });
 
 /* ───── Bhavcopy Data ───── */
-
-export async function saveBhavcopyData(entry) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.bhavcopy, 'readwrite');
-    tx.objectStore(STORES.bhavcopy).put(entry);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function loadAllBhavcopyData() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.bhavcopy, 'readonly');
-    const req = tx.objectStore(STORES.bhavcopy).getAll();
-    req.onsuccess = () => resolve(req.result.sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type)));
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function deleteBhavcopyData(date, type) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.bhavcopy, 'readwrite');
-    tx.objectStore(STORES.bhavcopy).delete([date, type]);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
+export const saveBhavcopyData = (entry) => save(TABLES.bhavcopy, entry);
+export const loadAllBhavcopyData = () => loadAll(TABLES.bhavcopy, (a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
+export const deleteBhavcopyData = (date, type) => remove(TABLES.bhavcopy, { date, type });
 
 /* ───── Settings ───── */
-
 export async function saveSetting(key, value) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.settings, 'readwrite');
-    tx.objectStore(STORES.settings).put({ key, value });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  await supaUpsert(TABLES.settings, { key, value });
 }
-
 export async function loadSetting(key, defaultValue) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.settings, 'readonly');
-    const req = tx.objectStore(STORES.settings).get(key);
-    req.onsuccess = () => resolve(req.result?.value ?? defaultValue);
-    req.onerror = () => reject(req.error);
-  });
+  if (!isSupabaseConfigured()) return defaultValue;
+  const rows = await supaFetchAll(TABLES.settings);
+  const found = rows.find(r => r.key === key);
+  return found ? found.value : defaultValue;
 }
 
 /* ───── Watchlist ───── */
-
-export async function saveWatchlistSymbol(symbol) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.watchlist, 'readwrite');
-    tx.objectStore(STORES.watchlist).put({ symbol });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function removeWatchlistSymbol(symbol) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.watchlist, 'readwrite');
-    tx.objectStore(STORES.watchlist).delete(symbol);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
+export const saveWatchlistSymbol = (symbol) => supaUpsert(TABLES.watchlist, { symbol });
+export const removeWatchlistSymbol = (symbol) => remove(TABLES.watchlist, { symbol });
 export async function loadWatchlist() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.watchlist, 'readonly');
-    const req = tx.objectStore(STORES.watchlist).getAll();
-    req.onsuccess = () => resolve(req.result.map((r) => r.symbol));
-    req.onerror = () => reject(req.error);
-  });
+  const rows = await supaFetchAll(TABLES.watchlist);
+  return rows.map(r => r.symbol);
 }
 
 /* ───── Market Context ───── */
-
-export async function saveMarketContext(entry) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.marketContext, 'readwrite');
-    tx.objectStore(STORES.marketContext).put(entry);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function loadAllMarketContext() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.marketContext, 'readonly');
-    const req = tx.objectStore(STORES.marketContext).getAll();
-    req.onsuccess = () => resolve(req.result.sort((a, b) => a.date.localeCompare(b.date)));
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function deleteMarketContext(date) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.marketContext, 'readwrite');
-    tx.objectStore(STORES.marketContext).delete(date);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
+export const saveMarketContext = (entry) => save(TABLES.marketContext, entry);
+export const loadAllMarketContext = () => loadAll(TABLES.marketContext, (a, b) => a.date.localeCompare(b.date));
+export const deleteMarketContext = (date) => remove(TABLES.marketContext, { date });
 
 /* ───── Commodity Data ───── */
+export const saveCommodityData = (entry) => save(TABLES.commodity, entry);
+export const loadAllCommodityData = () => loadAll(TABLES.commodity, (a, b) => a.date.localeCompare(b.date));
+export const deleteCommodityData = (date) => remove(TABLES.commodity, { date });
 
-export async function saveCommodityData(entry) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.commodity, 'readwrite');
-    tx.objectStore(STORES.commodity).put(entry);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function loadAllCommodityData() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.commodity, 'readonly');
-    const req = tx.objectStore(STORES.commodity).getAll();
-    req.onsuccess = () => resolve(req.result.sort((a, b) => a.date.localeCompare(b.date)));
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function deleteCommodityData(date) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.commodity, 'readwrite');
-    tx.objectStore(STORES.commodity).delete(date);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
+/* ───── Journal Data ───── */
+export const saveJournalEntry = (entry) => save(TABLES.journal, entry);
+export const loadAllJournalEntries = () => loadAll(TABLES.journal, (a, b) => a.date.localeCompare(b.date));
+export const deleteJournalEntry = (date) => remove(TABLES.journal, { date });
 
 /* ───── Clear all data ───── */
-
 export async function clearAllData() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const storeNames = [STORES.participant, STORES.bhavcopy];
-    const tx = db.transaction(storeNames, 'readwrite');
-    for (const name of storeNames) tx.objectStore(name).clear();
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  await Promise.all([
+    supaClearTable(TABLES.participant),
+    supaClearTable(TABLES.bhavcopy),
+    supaClearTable(TABLES.commodity),
+    supaClearTable(TABLES.marketContext),
+    supaClearTable(TABLES.journal),
+  ]);
+}
+
+/* ───── Export / Import ───── */
+export async function exportAllData() {
+  const [participant, bhavcopy, watchlist, marketContext, commodity, journal] = await Promise.all([
+    loadAllParticipantData(),
+    loadAllBhavcopyData(),
+    loadWatchlist(),
+    loadAllMarketContext(),
+    loadAllCommodityData(),
+    loadAllJournalEntries(),
+  ]);
+  return { participant, bhavcopy, watchlist: watchlist.map(s => ({ symbol: s })), marketContext, commodity, journal, exportedAt: new Date().toISOString() };
+}
+
+export async function importAllData(json) {
+  const counts = {};
+  if (json.participant?.length) { for (const e of json.participant) await saveParticipantData(e); counts.participant = json.participant.length; }
+  if (json.bhavcopy?.length) { for (const e of json.bhavcopy) await saveBhavcopyData(e); counts.bhavcopy = json.bhavcopy.length; }
+  if (json.commodity?.length) { for (const e of json.commodity) await saveCommodityData(e); counts.commodity = json.commodity.length; }
+  if (json.marketContext?.length) { for (const e of json.marketContext) await saveMarketContext(e); counts.marketContext = json.marketContext.length; }
+  if (json.journal?.length) { for (const e of json.journal) await saveJournalEntry(e); counts.journal = json.journal.length; }
+  if (json.watchlist?.length) { for (const e of json.watchlist) await saveWatchlistSymbol(e.symbol || e); counts.watchlist = json.watchlist.length; }
+  return counts;
+}
+
+export async function getStoreCounts() {
+  const [p, b, c, m, j, w, s] = await Promise.all([
+    supaFetchAll(TABLES.participant),
+    supaFetchAll(TABLES.bhavcopy),
+    supaFetchAll(TABLES.commodity),
+    supaFetchAll(TABLES.marketContext),
+    supaFetchAll(TABLES.journal),
+    supaFetchAll(TABLES.watchlist),
+    supaFetchAll(TABLES.settings),
+  ]);
+  return {
+    participantData: p.length,
+    bhavcopyData: b.length,
+    commodityData: c.length,
+    marketContext: m.length,
+    journalData: j.length,
+    watchlist: w.length,
+    settings: s.length,
+  };
 }

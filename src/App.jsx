@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import {
   DarkMode, LightMode, CloudUpload, ShowChart, Assessment, Compare, TipsAndUpdates,
-  Timeline, Science, Star, Map, DeleteSweep, Public, OilBarrel, LinearScale,
+  Timeline, Science, Star, Map, DeleteSweep, Public, OilBarrel, LinearScale, MenuBook, Storage,
 } from '@mui/icons-material';
 import { createAppTheme } from './theme';
 import { useData } from './context/DataContext';
@@ -24,6 +24,8 @@ import SentimentScorecard from './components/SentimentScorecard';
 import GlobalMarketContext from './components/GlobalMarketContext';
 import CommodityDashboard from './components/CommodityDashboard';
 import PivotLevels from './components/PivotLevels';
+import TradingJournal from './components/TradingJournal';
+import StorageManager from './components/StorageManager';
 
 export default function App() {
   const { darkMode, setDarkMode, participantData, bhavcopyData, commodityData, removeParticipantData, removeBhavcopyData, removeCommodityData, clearAll } = useData();
@@ -31,6 +33,7 @@ export default function App() {
   const [tab, setTab] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const totalFiles = participantData.length + bhavcopyData.length + commodityData.length;
 
@@ -63,6 +66,11 @@ export default function App() {
                 <CloudUpload />
               </Badge>
             </IconButton>
+            <Tooltip title="Storage Manager">
+              <IconButton onClick={() => setStorageOpen(true)} sx={{ ml: 0.5 }} color="primary">
+                <Storage />
+              </IconButton>
+            </Tooltip>
             {totalFiles > 0 && (
               <Tooltip title="Clear all data">
                 <IconButton onClick={() => setClearConfirm(true)} sx={{ ml: 0.5 }} color="error">
@@ -135,6 +143,7 @@ export default function App() {
             <Tab icon={<Public />} iconPosition="start" label="Global Context" />
             <Tab icon={<OilBarrel />} iconPosition="start" label="Commodities" />
             <Tab icon={<LinearScale />} iconPosition="start" label="Pivot Levels" />
+            <Tab icon={<MenuBook />} iconPosition="start" label="Journal" />
           </Tabs>
         </Box>
 
@@ -158,6 +167,7 @@ export default function App() {
               {tab === 8 && <GlobalMarketContext />}
               {tab === 9 && <CommodityDashboard />}
               {tab === 10 && <PivotLevels />}
+              {tab === 11 && <TradingJournal />}
             </>
           )}
         </Box>
@@ -188,6 +198,9 @@ export default function App() {
           </Box>
         </Box>
       </Dialog>
+
+      {/* ─── Storage Manager ─── */}
+      <StorageManager open={storageOpen} onClose={() => setStorageOpen(false)} />
     </ThemeProvider>
   );
 }
