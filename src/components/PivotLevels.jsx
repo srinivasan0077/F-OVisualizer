@@ -28,14 +28,32 @@ function calculateCPR(high, low, close) {
   const s3 = low - 2 * (high - low);
   const s4 = s3 - (high - low);
 
+  const cprWidth = Math.abs(tc - bc);
+  const cprWidthPct = (cprWidth / pivot) * 100;
+  const dailyRange = high - low;
+  const dailyVolatilityPct = (dailyRange / close) * 100;
+  // CPR width as % of daily range — key metric for narrow/medium/wide classification
+  const cprRangeRatio = dailyRange > 0 ? (cprWidth / dailyRange) * 100 : 0;
+
+  // Classification thresholds based on CPR width % of pivot
+  let cprType, cprTypeLabel;
+  if (cprWidthPct < 0.1) { cprType = 'narrow'; cprTypeLabel = 'Narrow CPR'; }
+  else if (cprWidthPct < 0.3) { cprType = 'medium'; cprTypeLabel = 'Medium CPR'; }
+  else { cprType = 'wide'; cprTypeLabel = 'Wide CPR'; }
+
   return {
     pivot: +pivot.toFixed(2),
     tc: +tc.toFixed(2),
     bc: +bc.toFixed(2),
     r1: +r1.toFixed(2), r2: +r2.toFixed(2), r3: +r3.toFixed(2), r4: +r4.toFixed(2),
     s1: +s1.toFixed(2), s2: +s2.toFixed(2), s3: +s3.toFixed(2), s4: +s4.toFixed(2),
-    cprWidth: +Math.abs(tc - bc).toFixed(2),
-    cprWidthPct: +((Math.abs(tc - bc) / pivot) * 100).toFixed(3),
+    cprWidth: +cprWidth.toFixed(2),
+    cprWidthPct: +cprWidthPct.toFixed(3),
+    dailyRange: +dailyRange.toFixed(2),
+    dailyVolatilityPct: +dailyVolatilityPct.toFixed(2),
+    cprRangeRatio: +cprRangeRatio.toFixed(2),
+    cprType,
+    cprTypeLabel,
   };
 }
 
@@ -520,13 +538,114 @@ export default function PivotLevels() {
             </Grid>
           )}
 
+          {/* CPR Volatility Indicator Card */}
+          <Grid item xs={12}>
+            <Card sx={{
+              border: '2px solid',
+              borderColor: cpr.cprType === 'narrow' ? 'warning.main' : cpr.cprType === 'wide' ? 'info.main' : 'success.main',
+            }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  📐 CPR Volatility Analysis
+                </Typography>
+                <Grid container spacing={2}>
+                  {/* CPR Width Classification */}
+                  <Grid item xs={12} sm={4}>
+                    <Box sx={{
+                      p: 2, borderRadius: 2, textAlign: 'center',
+                      bgcolor: cpr.cprType === 'narrow' ? 'rgba(255,152,0,0.12)' : cpr.cprType === 'wide' ? 'rgba(33,150,243,0.12)' : 'rgba(76,175,80,0.12)',
+                      border: '1px solid',
+                      borderColor: cpr.cprType === 'narrow' ? 'warning.main' : cpr.cprType === 'wide' ? 'info.main' : 'success.main',
+                    }}>
+                      <Typography variant="caption" color="text.secondary">CPR Classification</Typography>
+                      <Typography variant="h4" sx={{
+                        fontWeight: 800, my: 0.5,
+                        color: cpr.cprType === 'narrow' ? 'warning.main' : cpr.cprType === 'wide' ? 'info.main' : 'success.main',
+                      }}>
+                        {cpr.cprType === 'narrow' ? '🔥' : cpr.cprType === 'wide' ? '📦' : '⚖️'} {cpr.cprTypeLabel}
+                      </Typography>
+                      <Chip
+                        label={cpr.cprType === 'narrow' ? 'Trending / Breakout Day' : cpr.cprType === 'wide' ? 'Range-Bound / Choppy Day' : 'Normal Trading Day'}
+                        size="small"
+                        color={cpr.cprType === 'narrow' ? 'warning' : cpr.cprType === 'wide' ? 'info' : 'success'}
+                        sx={{ fontWeight: 600 }}
+                      />
+                    </Box>
+                  </Grid>
+
+                  {/* CPR Width % */}
+                  <Grid item xs={6} sm={2}>
+                    <Box sx={{ p: 2, borderRadius: 2, textAlign: 'center', bgcolor: 'action.hover' }}>
+                      <Typography variant="caption" color="text.secondary">CPR Width %</Typography>
+                      <Typography variant="h5" fontWeight={700} color="primary.main">{cpr.cprWidthPct}%</Typography>
+                      <Typography variant="caption" color="text.secondary">{cpr.cprWidth} pts</Typography>
+                    </Box>
+                  </Grid>
+
+                  {/* Daily Volatility % */}
+                  <Grid item xs={6} sm={2}>
+                    <Box sx={{ p: 2, borderRadius: 2, textAlign: 'center', bgcolor: 'action.hover' }}>
+                      <Typography variant="caption" color="text.secondary">Daily Volatility</Typography>
+                      <Typography variant="h5" fontWeight={700} color="secondary.main">{cpr.dailyVolatilityPct}%</Typography>
+                      <Typography variant="caption" color="text.secondary">{cpr.dailyRange} pts range</Typography>
+                    </Box>
+                  </Grid>
+
+                  {/* CPR as % of Daily Range */}
+                  <Grid item xs={6} sm={2}>
+                    <Box sx={{ p: 2, borderRadius: 2, textAlign: 'center', bgcolor: 'action.hover' }}>
+                      <Typography variant="caption" color="text.secondary">CPR / Range Ratio</Typography>
+                      <Typography variant="h5" fontWeight={700}>{cpr.cprRangeRatio}%</Typography>
+                      <Typography variant="caption" color="text.secondary">of daily range</Typography>
+                    </Box>
+                  </Grid>
+
+                  {/* Visual Gauge */}
+                  <Grid item xs={6} sm={2}>
+                    <Box sx={{ p: 2, borderRadius: 2, textAlign: 'center', bgcolor: 'action.hover' }}>
+                      <Typography variant="caption" color="text.secondary">Width Gauge</Typography>
+                      <Box sx={{ mt: 1, height: 12, borderRadius: 6, bgcolor: 'grey.300', position: 'relative', overflow: 'hidden' }}>
+                        <Box sx={{
+                          height: '100%', borderRadius: 6,
+                          width: `${Math.min(cpr.cprWidthPct * 100, 100)}%`,
+                          bgcolor: cpr.cprType === 'narrow' ? 'warning.main' : cpr.cprType === 'wide' ? 'info.main' : 'success.main',
+                          transition: 'width 0.5s ease',
+                        }} />
+                      </Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary' }}>Narrow</Typography>
+                        <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary' }}>Wide</Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                </Grid>
+
+                {/* Interpretation */}
+                <Alert
+                  severity={cpr.cprType === 'narrow' ? 'warning' : cpr.cprType === 'wide' ? 'info' : 'success'}
+                  sx={{ mt: 2 }}
+                  icon={false}
+                >
+                  <Typography variant="body2">
+                    {cpr.cprType === 'narrow'
+                      ? `🔥 CPR Width is only ${cpr.cprWidthPct}% of pivot (${cpr.cprWidth} pts) — extremely narrow. Expect a strong trending or breakout move. Daily volatility is ${cpr.dailyVolatilityPct}%. Consider directional trades or long straddle/strangle.`
+                      : cpr.cprType === 'wide'
+                        ? `📦 CPR Width is ${cpr.cprWidthPct}% of pivot (${cpr.cprWidth} pts) — wide range. Expect range-bound or choppy price action. Daily volatility is ${cpr.dailyVolatilityPct}%. Consider mean-reversion trades or iron condors.`
+                        : `⚖️ CPR Width is ${cpr.cprWidthPct}% of pivot (${cpr.cprWidth} pts) — moderate width. Normal trading session expected. Daily volatility is ${cpr.dailyVolatilityPct}%. Trade based on zone (above/below CPR).`
+                    }
+                  </Typography>
+                </Alert>
+              </CardContent>
+            </Card>
+          </Grid>
+
           {/* CPR Levels Card */}
           <Grid item xs={12} md={6}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>📊 Central Pivot Range (CPR)</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  CPR Width: {cpr.cprWidth} pts ({cpr.cprWidthPct}%) — {cpr.cprWidthPct < 0.15 ? '🔥 Narrow → Trending Day' : cpr.cprWidthPct > 0.5 ? '📦 Wide → Range Day' : 'Normal'}
+                  CPR Width: {cpr.cprWidth} pts ({cpr.cprWidthPct}%) — {cpr.cprType === 'narrow' ? '🔥 Narrow → Trending Day' : cpr.cprType === 'wide' ? '📦 Wide → Range Day' : '⚖️ Medium → Normal Day'}
                 </Typography>
                 <Grid container spacing={1}>
                   {[
@@ -698,7 +817,11 @@ export default function PivotLevels() {
                 <Box sx={{ mt: 1.5, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
                   <Typography variant="caption">
                     <strong>CPR Width:</strong> {cpr.cprWidth} pts ({cpr.cprWidthPct}%) —{' '}
-                    {cpr.cprWidthPct < 0.15 ? '🔥 Narrow (Trending Day)' : cpr.cprWidthPct > 0.5 ? '📦 Wide (Range Day)' : '⚖️ Normal'}
+                    {cpr.cprType === 'narrow' ? '🔥 Narrow (Trending Day)' : cpr.cprType === 'wide' ? '📦 Wide (Range Day)' : '⚖️ Medium (Normal Day)'}
+                  </Typography>
+                  <br />
+                  <Typography variant="caption">
+                    <strong>Daily Volatility:</strong> {cpr.dailyVolatilityPct}% ({cpr.dailyRange} pts) | <strong>CPR/Range Ratio:</strong> {cpr.cprRangeRatio}%
                   </Typography>
                 </Box>
               </CardContent>
