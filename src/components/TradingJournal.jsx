@@ -2,12 +2,12 @@ import { useState, useMemo } from 'react';
 import {
   Box, Paper, Typography, TextField, Button, Grid, Chip, Rating, Divider,
   Card, CardContent, Stack, IconButton, Tooltip, ToggleButton, ToggleButtonGroup,
-  Alert, Select, MenuItem, FormControl, InputLabel, Badge,
+  Alert, Select, MenuItem, FormControl, InputLabel, Badge, TablePagination,
 } from '@mui/material';
 import {
   Save, Delete, NavigateBefore, NavigateNext, Today, TrendingUp, TrendingDown,
   TrendingFlat, MenuBook, CalendarMonth, BarChart, EmojiEvents, SentimentSatisfied,
-  SentimentDissatisfied, SentimentNeutral,
+  SentimentDissatisfied, SentimentNeutral, ViewList,
 } from '@mui/icons-material';
 import { useData } from '../context/DataContext';
 
@@ -49,7 +49,9 @@ function emptyTrade() {
 export default function TradingJournal() {
   const { journalData, addJournalEntry, removeJournalEntry } = useData();
   const [selectedDate, setSelectedDate] = useState(todayStr());
-  const [view, setView] = useState('entry'); // entry | calendar | stats
+  const [view, setView] = useState('entry'); // entry | calendar | stats | list
+  const [listPage, setListPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const entry = useMemo(() => {
     return journalData.find(e => e.date === selectedDate) || emptyEntry(selectedDate);
@@ -119,6 +121,7 @@ export default function TradingJournal() {
         </Typography>
         <ToggleButtonGroup size="small" value={view} exclusive onChange={(_, v) => v && setView(v)}>
           <ToggleButton value="entry"><Today sx={{ mr: 0.5 }} /> Entry</ToggleButton>
+          <ToggleButton value="list"><ViewList sx={{ mr: 0.5 }} /> List</ToggleButton>
           <ToggleButton value="calendar"><CalendarMonth sx={{ mr: 0.5 }} /> Calendar</ToggleButton>
           <ToggleButton value="stats"><BarChart sx={{ mr: 0.5 }} /> Stats</ToggleButton>
         </ToggleButtonGroup>
@@ -259,6 +262,77 @@ export default function TradingJournal() {
             </Paper>
           </Grid>
         </Grid>
+      )}
+
+      {view === 'list' && (
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ViewList /> Journal Entries
+            <Chip label={`${journalData.length} entries`} size="small" sx={{ ml: 1 }} />
+          </Typography>
+          {journalData.length === 0 ? (
+            <Alert severity="info">No journal entries yet. Switch to the Entry tab to add one.</Alert>
+          ) : (
+            <>
+              {[...journalData]
+                .sort((a, b) => b.date.localeCompare(a.date))
+                .slice(listPage * rowsPerPage, listPage * rowsPerPage + rowsPerPage)
+                .map((e) => {
+                  const pnl = parseFloat(e.pnl) || 0;
+                  const tradeCount = (e.trades || []).length;
+                  return (
+                    <Paper
+                      key={e.date}
+                      variant="outlined"
+                      onClick={() => { setSelectedDate(e.date); setView('entry'); }}
+                      sx={{ p: 1.5, mb: 1, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Typography variant="subtitle1" fontWeight={700} sx={{ minWidth: 100 }}>
+                            {new Date(e.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'short' })}
+                          </Typography>
+                          <Chip
+                            label={e.bias}
+                            size="small"
+                            sx={{ bgcolor: biasColor[e.bias] || '#90a4b4', color: '#fff', fontWeight: 600, fontSize: '0.7rem' }}
+                          />
+                          <Chip label={e.emotionalState} size="small" variant="outlined" />
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          {tradeCount > 0 && (
+                            <Chip label={`${tradeCount} trade${tradeCount > 1 ? 's' : ''}`} size="small" variant="outlined" />
+                          )}
+                          <Typography
+                            variant="subtitle1"
+                            fontWeight={700}
+                            sx={{ color: pnl > 0 ? 'success.main' : pnl < 0 ? 'error.main' : 'text.secondary', minWidth: 90, textAlign: 'right' }}
+                          >
+                            {e.pnl !== '' && e.pnl !== undefined ? `₹${pnl.toLocaleString()}` : '—'}
+                          </Typography>
+                          <Rating value={e.rating || 0} size="small" readOnly />
+                        </Box>
+                      </Box>
+                      {(e.lessonsLearned || e.whatWorked || e.mistakes) && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }} noWrap>
+                          {e.whatWorked || e.mistakes || e.lessonsLearned}
+                        </Typography>
+                      )}
+                    </Paper>
+                  );
+                })}
+              <TablePagination
+                component="div"
+                count={journalData.length}
+                page={listPage}
+                onPageChange={(_, p) => setListPage(p)}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setListPage(0); }}
+                rowsPerPageOptions={[5, 10, 25, 50]}
+              />
+            </>
+          )}
+        </Paper>
       )}
 
       {view === 'calendar' && (
