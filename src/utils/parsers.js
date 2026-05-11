@@ -34,10 +34,10 @@ export function detectFileType(text) {
 
   const headers = firstLine.split(',').map((h) => h.trim().toUpperCase());
 
-  // MCX commodity detection — check if CONTRACT_D starts with FUTCOM/OPTFUT
+  // MCX/NSE commodity detection — check if CONTRACT_D starts with commodity prefixes
   if (headers.includes('CONTRACT_D')) {
     const sampleLines = text.split('\n').slice(1, 10).join('\n');
-    if (/FUTCOM|OPTFUT|FUTCUR|OPTCUR/i.test(sampleLines)) return 'commodity';
+    if (/FUTCOM|FUTBAS|FUTBLN|FUTENR|OPTFUT|OPTBLN|FUTCUR|OPTCUR/i.test(sampleLines)) return 'commodity';
   }
 
   if (headers.includes('UNDRLNG_ST') || headers.includes('PREMIUM_TR') || headers.includes('NOTIONAL_V'))
@@ -272,13 +272,35 @@ export function getSymbols(records) {
 //   FUTCUR USDINR 27-MAY-2026        (currency futures)
 //   OPTCUR USDINR 27-MAY-2026 CE 84  (currency options)
 
+const COMMODITY_SEGMENT_MAP = {
+  BAS: 'Base Metals',
+  BLN: 'Precious Metals',
+  ENR: 'Energy',
+  COM: 'Commodity',
+  CUR: 'Currency',
+};
+
 function parseCommodityFuturesContract(desc) {
-  const m = desc.match(/^(FUTCOM|FUTCUR)\s+(.+?)\s+(\d{2}-[A-Z]{3}-\d{4})$/);
+  // Space-separated format: FUTCOM CRUDEOIL 19-MAY-2026
+  let m = desc.match(/^(FUTCOM|FUTCUR)\s+(.+?)\s+(\d{2}-[A-Z]{3}-\d{4})$/);
+  if (m) {
+    const isCurrency = m[1] === 'FUTCUR';
+    return {
+      instrumentType: m[1],
+      segment: isCurrency ? 'Currency' : 'Commodity',
+      symbol: m[2].trim(),
+      expiry: m[3],
+      optionType: null,
+      strikePrice: null,
+    };
+  }
+  // Concatenated format: FUTBAS/FUTBLN/FUTENR + symbol + DD-MMM-YYYY
+  m = desc.match(/^FUT(BAS|BLN|ENR|COM|CUR)(.+?)(\d{2}-[A-Z]{3}-\d{4})$/);
   if (!m) return null;
-  const isCurrency = m[1] === 'FUTCUR';
+  const segCode = m[1];
   return {
-    instrumentType: m[1],
-    segment: isCurrency ? 'Currency' : 'Commodity',
+    instrumentType: 'FUT' + segCode,
+    segment: COMMODITY_SEGMENT_MAP[segCode] || 'Commodity',
     symbol: m[2].trim(),
     expiry: m[3],
     optionType: null,
@@ -287,12 +309,27 @@ function parseCommodityFuturesContract(desc) {
 }
 
 function parseCommodityOptionsContract(desc) {
-  const m = desc.match(/^(OPTFUT|OPTCUR)\s+(.+?)\s+(\d{2}-[A-Z]{3}-\d{4})\s+(CE|PE)\s+(.+)$/);
+  // Space-separated format: OPTFUT GOLD 30-MAY-2026 CE 72000
+  let m = desc.match(/^(OPTFUT|OPTCUR)\s+(.+?)\s+(\d{2}-[A-Z]{3}-\d{4})\s+(CE|PE)\s+(.+)$/);
+  if (m) {
+    const isCurrency = m[1] === 'OPTCUR';
+    return {
+      instrumentType: m[1],
+      segment: isCurrency ? 'Currency' : 'Commodity',
+      symbol: m[2].trim(),
+      expiry: m[3],
+      optionType: m[4],
+      strikePrice: parseFloat(m[5]),
+    };
+  }
+  // Concatenated format: OPT + FUT/BLN + symbol + DD-MMM-YYYY + CE/PE + strike
+  m = desc.match(/^OPT(FUT|BLN|CUR)(.+?)(\d{2}-[A-Z]{3}-\d{4})(CE|PE)(.+)$/);
   if (!m) return null;
-  const isCurrency = m[1] === 'OPTCUR';
+  const segCode = m[1];
+  const segmentMap = { FUT: 'Commodity', BLN: 'Precious Metals', CUR: 'Currency' };
   return {
-    instrumentType: m[1],
-    segment: isCurrency ? 'Currency' : 'Commodity',
+    instrumentType: 'OPT' + segCode,
+    segment: segmentMap[segCode] || 'Commodity',
     symbol: m[2].trim(),
     expiry: m[3],
     optionType: m[4],
@@ -369,17 +406,27 @@ export function parseCommodityBhavcopy(text, filename) {
 
 export const COMMODITY_INFO = {
   CRUDEOIL: { name: 'Crude Oil', unit: 'BBL', lotSize: 100, exchange: 'MCX', category: 'Energy' },
+  CRUDEOILM: { name: 'Crude Oil Mini', unit: 'BBL', lotSize: 10, exchange: 'MCX', category: 'Energy' },
+  BRCRUDEOIL: { name: 'Brent Crude Oil', unit: 'BBL', lotSize: 100, exchange: 'MCX', category: 'Energy' },
   NATURALGAS: { name: 'Natural Gas', unit: 'mmBtu', lotSize: 1250, exchange: 'MCX', category: 'Energy' },
+  NATGASMINI: { name: 'Natural Gas Mini', unit: 'mmBtu', lotSize: 250, exchange: 'MCX', category: 'Energy' },
+  ELECMBL: { name: 'Electricity MBL', unit: 'MWh', lotSize: 1, exchange: 'MCX', category: 'Energy' },
   GOLD: { name: 'Gold', unit: '10 gms', lotSize: 100, exchange: 'MCX', category: 'Precious Metals' },
   GOLDM: { name: 'Gold Mini', unit: '10 gms', lotSize: 10, exchange: 'MCX', category: 'Precious Metals' },
+  GOLD10G: { name: 'Gold 10g', unit: '10 gms', lotSize: 10, exchange: 'MCX', category: 'Precious Metals' },
+  GOLD1G: { name: 'Gold 1g', unit: '1 gm', lotSize: 1, exchange: 'MCX', category: 'Precious Metals' },
+  GOLDGUINEA: { name: 'Gold Guinea', unit: '8 gms', lotSize: 8, exchange: 'MCX', category: 'Precious Metals' },
   GOLDPETAL: { name: 'Gold Petal', unit: '1 gm', lotSize: 1, exchange: 'MCX', category: 'Precious Metals' },
   SILVER: { name: 'Silver', unit: 'KG', lotSize: 30, exchange: 'MCX', category: 'Precious Metals' },
   SILVERM: { name: 'Silver Mini', unit: 'KG', lotSize: 5, exchange: 'MCX', category: 'Precious Metals' },
   SILVERMIC: { name: 'Silver Micro', unit: 'KG', lotSize: 1, exchange: 'MCX', category: 'Precious Metals' },
   COPPER: { name: 'Copper', unit: 'KG', lotSize: 2500, exchange: 'MCX', category: 'Base Metals' },
   ZINC: { name: 'Zinc', unit: 'KG', lotSize: 5000, exchange: 'MCX', category: 'Base Metals' },
+  ZINCMINI: { name: 'Zinc Mini', unit: 'KG', lotSize: 1000, exchange: 'MCX', category: 'Base Metals' },
   ALUMINIUM: { name: 'Aluminium', unit: 'KG', lotSize: 5000, exchange: 'MCX', category: 'Base Metals' },
+  ALUMINI: { name: 'Aluminium Mini', unit: 'KG', lotSize: 1000, exchange: 'MCX', category: 'Base Metals' },
   LEAD: { name: 'Lead', unit: 'KG', lotSize: 5000, exchange: 'MCX', category: 'Base Metals' },
+  LEADMINI: { name: 'Lead Mini', unit: 'KG', lotSize: 1000, exchange: 'MCX', category: 'Base Metals' },
   NICKEL: { name: 'Nickel', unit: 'KG', lotSize: 1500, exchange: 'MCX', category: 'Base Metals' },
   MENTHAOIL: { name: 'Mentha Oil', unit: 'KG', lotSize: 360, exchange: 'MCX', category: 'Agri' },
   COTTON: { name: 'Cotton', unit: 'Bales', lotSize: 25, exchange: 'MCX', category: 'Agri' },

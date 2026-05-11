@@ -118,8 +118,22 @@ export function DataProvider({ children }) {
     setCommodityData((prev) => {
       const idx = prev.findIndex((f) => f.date === entry.date);
       if (idx >= 0) {
+        // Merge futures and options records from both uploads
+        const existing = prev[idx];
+        const merged = {
+          ...existing,
+          ...entry,
+          futuresRecords: [
+            ...(entry.futuresRecords.length ? entry.futuresRecords : existing.futuresRecords || []),
+          ],
+          optionsRecords: [
+            ...(entry.optionsRecords.length ? entry.optionsRecords : existing.optionsRecords || []),
+          ],
+        };
+        merged.totalFutures = merged.futuresRecords.length;
+        merged.totalOptions = merged.optionsRecords.length;
         const next = [...prev];
-        next[idx] = entry;
+        next[idx] = merged;
         return next;
       }
       return [...prev, entry].sort((a, b) => a.date.localeCompare(b.date));
