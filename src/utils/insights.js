@@ -99,6 +99,84 @@ export function calculateFIILongShortRatio(participantDataArray) {
   });
 }
 
+export function buildFIIIndexFuturesTrend(participantDataArray) {
+  const sorted = [...participantDataArray].sort((a, b) => a.date.localeCompare(b.date));
+
+  return sorted.map((day, index, arr) => {
+    const fii = day.participants.find((p) => p.clientType === 'FII');
+    const longContracts = fii?.futIdxL || 0;
+    const shortContracts = fii?.futIdxS || 0;
+    const grossContracts = longContracts + shortContracts;
+    const netContracts = longContracts - shortContracts;
+    const ratio = shortContracts > 0 ? longContracts / shortContracts : null;
+    const longSharePct = grossContracts > 0 ? (longContracts / grossContracts) * 100 : 0;
+    const pressurePct = grossContracts > 0 ? (netContracts / grossContracts) * 100 : 0;
+
+    const prev = index > 0 ? arr[index - 1] : null;
+    const prevFii = prev?.participants.find((p) => p.clientType === 'FII');
+    const prevLong = prevFii?.futIdxL || 0;
+    const prevShort = prevFii?.futIdxS || 0;
+    const prevGross = prevLong + prevShort;
+    const prevNet = prevLong - prevShort;
+    const prevRatio = prevShort > 0 ? prevLong / prevShort : null;
+
+    let regime = 'Balanced';
+    if (ratio !== null && ratio >= 1.15) regime = 'Long Heavy';
+    else if (ratio !== null && ratio <= 0.85) regime = 'Short Heavy';
+
+    return {
+      date: day.date,
+      longContracts,
+      shortContracts,
+      grossContracts,
+      netContracts,
+      ratio,
+      longSharePct,
+      pressurePct,
+      longChange: longContracts - prevLong,
+      shortChange: shortContracts - prevShort,
+      grossChange: grossContracts - prevGross,
+      netChange: netContracts - prevNet,
+      ratioChange: ratio !== null && prevRatio !== null ? ratio - prevRatio : null,
+      regime,
+    };
+  });
+}
+
+export function calculateMovingAverage(values, period) {
+  return values.map((_, index) => {
+    if (index < period - 1) return null;
+    const window = values.slice(index - period + 1, index + 1).filter((value) => value !== null && value !== undefined);
+    if (window.length !== period) return null;
+    return window.reduce((sum, value) => sum + value, 0) / period;
+  });
+}
+
+export function calculateRegressionTrendline(values) {
+  const points = values
+    .map((value, index) => ({ x: index, y: value }))
+    .filter((point) => point.y !== null && point.y !== undefined);
+
+  if (points.length < 2) {
+    return { slope: 0, intercept: 0, values: values.map(() => null) };
+  }
+
+  const count = points.length;
+  const sumX = points.reduce((sum, point) => sum + point.x, 0);
+  const sumY = points.reduce((sum, point) => sum + point.y, 0);
+  const sumXY = points.reduce((sum, point) => sum + (point.x * point.y), 0);
+  const sumXX = points.reduce((sum, point) => sum + (point.x * point.x), 0);
+  const denominator = (count * sumXX) - (sumX * sumX);
+  const slope = denominator === 0 ? 0 : ((count * sumXY) - (sumX * sumY)) / denominator;
+  const intercept = (sumY - (slope * sumX)) / count;
+
+  return {
+    slope,
+    intercept,
+    values: values.map((value, index) => (value === null || value === undefined ? null : (slope * index) + intercept)),
+  };
+}
+
 /* ───────── Multi-Day Trend Data ───────── */
 
 export function buildMultiDayTrend(participantDataArray) {

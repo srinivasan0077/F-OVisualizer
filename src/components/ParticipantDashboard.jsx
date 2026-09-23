@@ -8,6 +8,7 @@ import ReactECharts from 'echarts-for-react';
 import { useData } from '../context/DataContext';
 import { formatDate } from '../utils/parsers';
 import { formatNum } from '../utils/insights';
+import FIIIndexFuturesExplorer from './FIIIndexFuturesExplorer';
 
 const SEGMENTS = [
   {
@@ -185,6 +186,8 @@ export default function ParticipantDashboard() {
           <Chip label={formatDate(data.date)} color="primary" variant="outlined" />
         )}
       </Box>
+
+      <FIIIndexFuturesExplorer />
 
       <Grid container spacing={3}>
         {/* Segment chart */}
