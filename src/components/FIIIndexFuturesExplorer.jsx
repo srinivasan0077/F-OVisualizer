@@ -23,9 +23,10 @@ function average(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function createZoomConfig(length) {
+function createZoomConfig(length, windowSize) {
+  const resolvedWindow = windowSize === 'all' ? length : Number(windowSize);
   const endValue = Math.max(0, length - 1);
-  const startValue = Math.max(0, length - 20);
+  const startValue = Math.max(0, length - Math.min(length, resolvedWindow));
   return [
     {
       type: 'inside',
@@ -71,7 +72,7 @@ function buildTrendlineSeries(lines, baseLength) {
 export default function FIIIndexFuturesExplorer() {
   const { participantData, darkMode } = useData();
   const [open, setOpen] = useState(false);
-  const [lookback, setLookback] = useState('10');
+  const [lookback, setLookback] = useState('20');
   const [studyTarget, setStudyTarget] = useState('ratio');
   const [studyPeriods, setStudyPeriods] = useState(['3', '5']);
   const [drawMode, setDrawMode] = useState(null);
@@ -80,27 +81,28 @@ export default function FIIIndexFuturesExplorer() {
 
   const trendData = useMemo(() => buildFIIIndexFuturesTrend(participantData), [participantData]);
 
-  const visibleTrend = useMemo(() => {
+  const analysisWindow = useMemo(() => {
     if (lookback === 'all') return trendData;
     return trendData.slice(-Number(lookback));
   }, [lookback, trendData]);
 
-  const latest = visibleTrend[visibleTrend.length - 1] || null;
-  const validRatios = visibleTrend.filter((row) => row.ratio !== null);
-  const xDates = visibleTrend.map((row) => formatDate(row.date));
+  const latest = trendData[trendData.length - 1] || null;
+  const windowLatest = analysisWindow[analysisWindow.length - 1] || latest;
+  const validRatios = analysisWindow.filter((row) => row.ratio !== null);
+  const xDates = trendData.map((row) => formatDate(row.date));
 
   const summary = useMemo(() => {
-    if (!visibleTrend.length) return null;
-    const last = visibleTrend[visibleTrend.length - 1];
-    const first = visibleTrend[0];
+    if (!analysisWindow.length) return null;
+    const last = analysisWindow[analysisWindow.length - 1];
+    const first = analysisWindow[0];
     return {
       currentRegime: last.regime,
       ratioChange: last.ratio !== null && first.ratio !== null ? last.ratio - first.ratio : null,
       netChange: last.netContracts - first.netContracts,
       avgRatio: average(validRatios.map((row) => row.ratio)),
-      avgPressure: average(visibleTrend.map((row) => row.pressurePct)),
+      avgPressure: average(analysisWindow.map((row) => row.pressurePct)),
     };
-  }, [validRatios, visibleTrend]);
+  }, [analysisWindow, validRatios]);
 
   const insightLines = useMemo(() => {
     if (!summary || !latest) return [];
@@ -130,13 +132,13 @@ export default function FIIIndexFuturesExplorer() {
           {
             key: 'long',
             label: 'Long Contracts',
-            values: visibleTrend.map((row) => row.longContracts),
+            values: trendData.map((row) => row.longContracts),
             color: '#43a047',
           },
           {
             key: 'short',
             label: 'Short Contracts',
-            values: visibleTrend.map((row) => row.shortContracts),
+            values: trendData.map((row) => row.shortContracts),
             color: '#e53935',
           },
         ],
@@ -150,12 +152,12 @@ export default function FIIIndexFuturesExplorer() {
         {
           key: 'ratio',
           label: 'L/S Ratio',
-          values: visibleTrend.map((row) => row.ratio),
+          values: trendData.map((row) => row.ratio),
           color: '#8e24aa',
         },
       ],
     };
-  }, [studyTarget, visibleTrend]);
+  }, [studyTarget, trendData]);
 
   const studyAnalysis = useMemo(() => {
     if (!studyConfig) return null;
@@ -192,7 +194,7 @@ export default function FIIIndexFuturesExplorer() {
     return lines;
   }, [studyAnalysis, studyConfig, studyTarget]);
 
-  const zoomConfig = useMemo(() => createZoomConfig(visibleTrend.length), [visibleTrend.length]);
+  const zoomConfig = useMemo(() => createZoomConfig(trendData.length, lookback), [trendData.length, lookback]);
 
   const handleChartClick = (chartKey) => (params) => {
     if (drawMode !== chartKey || params?.componentType !== 'series' || typeof params.dataIndex !== 'number') return;
@@ -203,7 +205,7 @@ export default function FIIIndexFuturesExplorer() {
     const point = {
       index: params.dataIndex,
       value: Number(rawValue),
-      date: visibleTrend[params.dataIndex]?.date,
+      date: trendData[params.dataIndex]?.date,
     };
 
     if (!pendingPoint) {
@@ -252,7 +254,7 @@ export default function FIIIndexFuturesExplorer() {
       {
         name: 'FII Index Long',
         type: 'line',
-        data: visibleTrend.map((row) => row.longContracts),
+        data: trendData.map((row) => row.longContracts),
         smooth: true,
         lineStyle: { width: 2.5, color: '#43a047' },
         areaStyle: { opacity: 0.12, color: '#43a047' },
@@ -261,15 +263,15 @@ export default function FIIIndexFuturesExplorer() {
       {
         name: 'FII Index Short',
         type: 'line',
-        data: visibleTrend.map((row) => row.shortContracts),
+        data: trendData.map((row) => row.shortContracts),
         smooth: true,
         lineStyle: { width: 2.5, color: '#e53935' },
         areaStyle: { opacity: 0.12, color: '#e53935' },
         itemStyle: { color: '#e53935' },
       },
-      ...buildTrendlineSeries(trendlines.longShort, visibleTrend.length),
+      ...buildTrendlineSeries(trendlines.longShort, trendData.length),
     ],
-  }), [darkMode, visibleTrend, xDates, zoomConfig, trendlines.longShort]);
+  }), [darkMode, trendData, xDates, zoomConfig, trendlines.longShort]);
 
   const ratioNetChart = useMemo(() => ({
     tooltip: { trigger: 'axis' },
@@ -297,7 +299,7 @@ export default function FIIIndexFuturesExplorer() {
       {
         name: 'L/S Ratio',
         type: 'line',
-        data: visibleTrend.map((row) => row.ratio),
+        data: trendData.map((row) => row.ratio),
         smooth: true,
         lineStyle: { width: 2.5, color: '#8e24aa' },
         itemStyle: { color: (params) => (Number(params.value) >= 1 ? '#43a047' : '#e53935') },
@@ -310,14 +312,14 @@ export default function FIIIndexFuturesExplorer() {
         name: 'Net Position',
         type: 'bar',
         yAxisIndex: 1,
-        data: visibleTrend.map((row) => ({
+        data: trendData.map((row) => ({
           value: row.netContracts,
           itemStyle: { color: row.netContracts >= 0 ? '#66bb6a' : '#ef5350' },
         })),
         barMaxWidth: 24,
       },
     ],
-  }), [darkMode, visibleTrend, xDates, zoomConfig]);
+  }), [darkMode, trendData, xDates, zoomConfig]);
 
   const changeChart = useMemo(() => ({
     tooltip: { trigger: 'axis' },
@@ -335,30 +337,30 @@ export default function FIIIndexFuturesExplorer() {
       {
         name: 'Long Change',
         type: 'bar',
-        data: visibleTrend.map((row) => ({ value: row.longChange, itemStyle: { color: row.longChange >= 0 ? '#43a047' : '#a5d6a7' } })),
+        data: trendData.map((row) => ({ value: row.longChange, itemStyle: { color: row.longChange >= 0 ? '#43a047' : '#a5d6a7' } })),
         barMaxWidth: 18,
       },
       {
         name: 'Short Change',
         type: 'bar',
-        data: visibleTrend.map((row) => ({ value: row.shortChange, itemStyle: { color: row.shortChange >= 0 ? '#e53935' : '#ef9a9a' } })),
+        data: trendData.map((row) => ({ value: row.shortChange, itemStyle: { color: row.shortChange >= 0 ? '#e53935' : '#ef9a9a' } })),
         barMaxWidth: 18,
       },
       {
         name: 'Net Change',
         type: 'line',
-        data: visibleTrend.map((row) => row.netChange),
+        data: trendData.map((row) => row.netChange),
         smooth: true,
         lineStyle: { width: 2.5, color: '#1e88e5' },
         itemStyle: { color: '#1e88e5' },
       },
     ],
-  }), [darkMode, visibleTrend, xDates, zoomConfig]);
+  }), [darkMode, trendData, xDates, zoomConfig]);
 
   const regimeMapChart = useMemo(() => ({
     tooltip: {
       formatter: (params) => {
-        const row = visibleTrend[params.dataIndex];
+        const row = trendData[params.dataIndex];
         return `<b>${formatDate(row.date)}</b><br/>Ratio: ${row.ratio?.toFixed(2) || '-'}<br/>Pressure: ${row.pressurePct.toFixed(1)}%<br/>Gross: ${formatNum(row.grossContracts)}<br/>Regime: ${row.regime}`;
       },
     },
@@ -379,7 +381,7 @@ export default function FIIIndexFuturesExplorer() {
     series: [{
       type: 'scatter',
       symbolSize: (value) => Math.max(10, Math.min(40, value[2] / 20000)),
-      data: visibleTrend.filter((row) => row.ratio !== null).map((row) => [row.ratio, row.pressurePct, row.grossContracts]),
+      data: trendData.filter((row) => row.ratio !== null).map((row) => [row.ratio, row.pressurePct, row.grossContracts]),
       itemStyle: {
         color: (params) => params.data[1] >= 0 ? '#43a047' : '#e53935',
         opacity: 0.8,
@@ -393,7 +395,7 @@ export default function FIIIndexFuturesExplorer() {
         ],
       },
     }],
-  }), [darkMode, visibleTrend]);
+  }), [darkMode, trendData]);
 
   const studyChart = useMemo(() => {
     if (!studyConfig || !studyAnalysis) return {};
@@ -440,10 +442,10 @@ export default function FIIIndexFuturesExplorer() {
           itemStyle: { color: series.color },
           symbol: 'none',
         })),
-        ...buildTrendlineSeries(trendlines.study, visibleTrend.length),
+        ...buildTrendlineSeries(trendlines.study, trendData.length),
       ],
     };
-  }, [darkMode, studyAnalysis, studyConfig, studyTarget, xDates, zoomConfig, trendlines.study, visibleTrend.length]);
+  }, [darkMode, studyAnalysis, studyConfig, studyTarget, xDates, zoomConfig, trendlines.study, trendData.length]);
 
   if (!trendData.length) return null;
 
@@ -482,7 +484,7 @@ export default function FIIIndexFuturesExplorer() {
           <Box sx={{ py: 1 }}>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
               <Typography variant="body2" color="text.secondary">
-                Study absolute positioning, directional pressure, momentum, and regime shifts in FII index futures.
+                Study full-history positioning while the session buttons control the initial visible window and summary slice.
               </Typography>
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <ToggleButtonGroup
@@ -548,7 +550,7 @@ export default function FIIIndexFuturesExplorer() {
                 <Typography variant="h6" gutterBottom>Chart Navigation & Trendlines</Typography>
                 <Divider sx={{ mb: 2 }} />
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Use mouse wheel or trackpad to zoom, drag inside the chart to pan, or use the bottom slider for a rolling history window.
+                  Charts now keep full history. Use mouse wheel or trackpad to zoom, drag to pan, or use the bottom slider to move across the full timeline.
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
                   <Button
@@ -596,8 +598,8 @@ export default function FIIIndexFuturesExplorer() {
                   <Card variant="outlined">
                     <CardContent sx={{ textAlign: 'center' }}>
                       <Typography variant="caption" color="text.secondary">Latest L/S Ratio</Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 700, color: latest.ratio >= 1 ? 'success.main' : 'error.main' }}>
-                        {latest.ratio?.toFixed(2) || '-'}
+                      <Typography variant="h4" sx={{ fontWeight: 700, color: windowLatest.ratio >= 1 ? 'success.main' : 'error.main' }}>
+                        {windowLatest.ratio?.toFixed(2) || '-'}
                       </Typography>
                     </CardContent>
                   </Card>
@@ -606,8 +608,8 @@ export default function FIIIndexFuturesExplorer() {
                   <Card variant="outlined">
                     <CardContent sx={{ textAlign: 'center' }}>
                       <Typography variant="caption" color="text.secondary">Net Position</Typography>
-                      <Typography variant="h5" sx={{ fontWeight: 700, color: latest.netContracts >= 0 ? 'success.main' : 'error.main' }}>
-                        {latest.netContracts >= 0 ? '+' : ''}{formatNum(latest.netContracts)}
+                      <Typography variant="h5" sx={{ fontWeight: 700, color: windowLatest.netContracts >= 0 ? 'success.main' : 'error.main' }}>
+                        {windowLatest.netContracts >= 0 ? '+' : ''}{formatNum(windowLatest.netContracts)}
                       </Typography>
                     </CardContent>
                   </Card>
@@ -616,8 +618,8 @@ export default function FIIIndexFuturesExplorer() {
                   <Card variant="outlined">
                     <CardContent sx={{ textAlign: 'center' }}>
                       <Typography variant="caption" color="text.secondary">Pressure</Typography>
-                      <Typography variant="h5" sx={{ fontWeight: 700, color: latest.pressurePct >= 0 ? 'success.main' : 'error.main' }}>
-                        {latest.pressurePct.toFixed(1)}%
+                      <Typography variant="h5" sx={{ fontWeight: 700, color: windowLatest.pressurePct >= 0 ? 'success.main' : 'error.main' }}>
+                        {windowLatest.pressurePct.toFixed(1)}%
                       </Typography>
                     </CardContent>
                   </Card>
@@ -664,7 +666,7 @@ export default function FIIIndexFuturesExplorer() {
                         <Card variant="outlined">
                           <CardContent sx={{ textAlign: 'center' }}>
                             <Typography variant="caption" color="text.secondary">Latest Ratio</Typography>
-                            <Typography variant="h6" sx={{ fontWeight: 700 }}>{latest?.ratio?.toFixed(2) || '-'}</Typography>
+                            <Typography variant="h6" sx={{ fontWeight: 700 }}>{windowLatest?.ratio?.toFixed(2) || '-'}</Typography>
                           </CardContent>
                         </Card>
                       </Grid>
@@ -674,7 +676,7 @@ export default function FIIIndexFuturesExplorer() {
                           <Card variant="outlined">
                             <CardContent sx={{ textAlign: 'center' }}>
                               <Typography variant="caption" color="text.secondary">Latest Long</Typography>
-                              <Typography variant="h6" sx={{ fontWeight: 700, color: 'success.main' }}>{formatNum(latest?.longContracts || 0)}</Typography>
+                              <Typography variant="h6" sx={{ fontWeight: 700, color: 'success.main' }}>{formatNum(windowLatest?.longContracts || 0)}</Typography>
                             </CardContent>
                           </Card>
                         </Grid>
@@ -682,7 +684,7 @@ export default function FIIIndexFuturesExplorer() {
                           <Card variant="outlined">
                             <CardContent sx={{ textAlign: 'center' }}>
                               <Typography variant="caption" color="text.secondary">Latest Short</Typography>
-                              <Typography variant="h6" sx={{ fontWeight: 700, color: 'error.main' }}>{formatNum(latest?.shortContracts || 0)}</Typography>
+                              <Typography variant="h6" sx={{ fontWeight: 700, color: 'error.main' }}>{formatNum(windowLatest?.shortContracts || 0)}</Typography>
                             </CardContent>
                           </Card>
                         </Grid>
@@ -693,6 +695,9 @@ export default function FIIIndexFuturesExplorer() {
                         <CardContent sx={{ textAlign: 'center' }}>
                           <Typography variant="caption" color="text.secondary">Active MAs</Typography>
                           <Typography variant="h6" sx={{ fontWeight: 700 }}>{studyPeriods.map((period) => `MA${period}`).join(', ')}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {lookback === 'all' ? 'Full history view' : `Initial view: last ${lookback} sessions`}
+                            </Typography>
                         </CardContent>
                       </Card>
                     </Grid>
@@ -765,7 +770,7 @@ export default function FIIIndexFuturesExplorer() {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {visibleTrend.map((row) => (
+                          {analysisWindow.map((row) => (
                             <TableRow key={row.date} hover>
                               <TableCell>{formatDate(row.date)}</TableCell>
                               <TableCell align="right">{formatNum(row.longContracts)}</TableCell>
